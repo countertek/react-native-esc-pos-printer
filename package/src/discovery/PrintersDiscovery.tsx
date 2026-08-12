@@ -126,7 +126,9 @@ class PrintersDiscoveryClass {
   pairBluetoothDevice = async (macAddress?: string) => {
     if (Platform.OS === 'ios') {
       try {
-        await EscPosPrinterDiscovery.pairBluetoothDevice(macAddress || '');
+        return await EscPosPrinterDiscovery.pairBluetoothDevice(
+          macAddress || ''
+        );
       } catch (error) {
         throw getProcessedError({
           methodName: 'pairBluetoothDevice',
@@ -136,7 +138,7 @@ class PrintersDiscoveryClass {
         });
       }
     } else {
-      return Promise.resolve();
+      return '';
     }
   };
 

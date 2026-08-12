@@ -307,7 +307,7 @@ public class EscPosPrinterModule extends NativeEscPosPrinterSpec {
         promise.reject(EposStringHelper.getErrorTextData(ERR_INIT, ""));
       } else {
         try {
-          thePrinter.addImage(source, mContext, (int) width, (int) color, (int) mode, (int) halftone, (int) brightness, (int) compress);
+          thePrinter.addImage(source, mContext, (int) width, (int) color, (int) mode, (int) halftone, brightness, (int) compress);
           promise.resolve(null);
         } catch(Exception e) {
           processError(promise, e, "");

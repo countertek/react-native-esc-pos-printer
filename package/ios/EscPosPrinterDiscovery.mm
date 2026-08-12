@@ -75,7 +75,9 @@ RCT_EXPORT_METHOD(pairBluetoothDevice: (NSString *) macAddress
        int result = [pairingPrinter connectDevice: address];
 
         if(result == EPOS2_BT_SUCCESS || result == EPOS2_BT_ERR_ALREADY_CONNECT) {
-            resolve(nil);
+            // Pairing succeeded; disconnection is best-effort cleanup.
+            [pairingPrinter disconnectDevice: address];
+            resolve(address);
         } else {
             reject(@"event_failure", [@(result) stringValue], nil);
         }

@@ -38,7 +38,7 @@ export interface Spec extends TurboModule {
   startDiscovery(filterOption: Object): Promise<void>;
   stopDiscovery(): Promise<void>;
   enableLocationSetting(): Promise<void>;
-  pairBluetoothDevice(macAddress: string): Promise<void>;
+  pairBluetoothDevice(macAddress: string): Promise<string>;
 
   readonly onDiscovery: EventEmitter<Array<Object>>;
   readonly enableLocationSettingSuccess: EventEmitter<void>;

@@ -136,22 +136,22 @@ PrintersDiscovery.onError((error) => {
 
 ### pairBluetoothDevice *(iOS only)*
 
-*pairBluetoothDevice(`macAddress?: string`): `Promise<void>`*
+*pairBluetoothDevice(`macAddress?: string`): `Promise<string>`*
 
-Controls pairing connection with a Bluetooth device. If macAddress is not provided, a list of available devices will be shown in native dialog.
+Controls pairing connection with a Bluetooth device. If `macAddress` is not provided, a list of available devices will be shown in a native dialog.
 
 ##### Parameters
 
 | **Name** | **Type** | **Description** |
 | --- | --- | --- |
-| macAddress | string | The BD address of the printer newly paired is returned. Format: BT:00:11:22:33:44:55 |
+| macAddress | string | Optional BD address of the printer to pair. Format: BT:00:11:22:33:44:55 |
 
 ##### Returns
 
-`Promise<void>`
+`Promise<string>` resolving to the paired printer's BD address. On Android, the no-op implementation resolves to an empty string.
 
 #### Example
 
 ```typescript
-PrintersDiscovery.pairBluetoothDevice().the;
+const address = await PrintersDiscovery.pairBluetoothDevice();
 ```

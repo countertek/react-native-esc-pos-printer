@@ -322,9 +322,9 @@ int EPOS2_ERR_INIT = -1;
     if (name == nil || [name isEqualToString:@""]) return EPOS2_TM_T88;
 
     if ([name hasPrefix:@"TM-m10"]) return EPOS2_TM_M10;
-    if ([name hasPrefix:@"TM-m30"]) return EPOS2_TM_M30;
     if ([name hasPrefix:@"TM-m30III"]) return EPOS2_TM_M30III;
     if ([name hasPrefix:@"TM-m30II"]) return EPOS2_TM_M30II;
+    if ([name hasPrefix:@"TM-m30"]) return EPOS2_TM_M30;
     if ([name hasPrefix:@"TM-m50II"]) return EPOS2_TM_M50II;
     if ([name hasPrefix:@"TM-m50"]) return EPOS2_TM_M50;
     if ([name hasPrefix:@"TM-P20II"]) return EPOS2_TM_P20II;
