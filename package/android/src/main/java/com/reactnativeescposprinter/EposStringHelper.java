@@ -347,9 +347,9 @@ public static int getPrinterSeries(final String deviceName) {
         if (deviceName == null || deviceName.isEmpty()) return Printer.TM_T88;
 
         if (deviceName.startsWith("TM-m10")) return Printer.TM_M10;
-        if (deviceName.startsWith("TM-m30")) return Printer.TM_M30;
         if (deviceName.startsWith("TM-m30III")) return Printer.TM_M30III;
         if (deviceName.startsWith("TM-m30II")) return Printer.TM_M30II;
+        if (deviceName.startsWith("TM-m30")) return Printer.TM_M30;
         if (deviceName.startsWith("TM-m50II")) return Printer.TM_M50II;
         if (deviceName.startsWith("TM-m50")) return Printer.TM_M50;
         if (deviceName.startsWith("TM-P20II")) return Printer.TM_P20II;
