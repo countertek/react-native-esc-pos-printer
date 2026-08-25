@@ -1,0 +1,6 @@
+
+framework module libepos2 {
+  umbrella header "libepos2.h"
+  export *
+  module * { export * }
+}
