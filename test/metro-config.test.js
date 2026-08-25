@@ -7,19 +7,14 @@ const vm = require('node:vm');
 const repositoryRoot = path.resolve(__dirname, '..');
 
 test('package exposes its source entry to Metro', () => {
-  const manifest = JSON.parse(
-    fs.readFileSync(path.join(repositoryRoot, 'package.json'), 'utf8')
-  );
+  const manifest = JSON.parse(fs.readFileSync(path.join(repositoryRoot, 'package.json'), 'utf8'));
 
   assert.equal(manifest['react-native'], 'src/index.ts');
 });
 
 test('Metro block list handles special paths and both separators', () => {
   const projectRoot = path.join(path.sep, 'work[tree', 'example');
-  const source = fs.readFileSync(
-    path.join(repositoryRoot, 'example', 'metro.config.js'),
-    'utf8'
-  );
+  const source = fs.readFileSync(path.join(repositoryRoot, 'example', 'metro.config.js'), 'utf8');
   const config = { resolver: { blockList: [] } };
   const mockRequire = (id) => {
     if (id === 'expo/metro-config') {
