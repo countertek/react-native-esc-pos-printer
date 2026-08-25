@@ -1,1 +1,0 @@
-export { getProcessedError } from './errors';
