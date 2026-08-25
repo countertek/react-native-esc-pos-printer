@@ -39,6 +39,12 @@ registerHooks({
         shortCircuit: true,
       };
     }
+    if (specifier === 'react') {
+      return {
+        url: 'data:text/javascript,export function useCallback(fn){return fn};export function useEffect(){};export function useState(v){return [v,()=>{}]}',
+        shortCircuit: true,
+      };
+    }
     if (specifier.startsWith('.') && context.parentURL?.includes('/src/')) {
       return nextResolve(`${specifier}.ts`, context);
     }
@@ -47,12 +53,8 @@ registerHooks({
 });
 globalThis.__escPosNativeModule = nativeModule;
 
-const {
-  getDiscoveryPermissions,
-  PrintersDiscovery,
-  PrinterDiscoveryError,
-  requestDiscoveryPermissions,
-} = await import('../src/index.ts');
+const { PrintersDiscovery, PrinterDiscoveryError } = await import('../src/Discovery.ts');
+const { getDiscoveryPermissions, requestDiscoveryPermissions } = await import('../src/index.ts');
 
 test('permission helpers delegate to the native package seam', async () => {
   assert.deepEqual(await getDiscoveryPermissions(), granted);
@@ -97,7 +99,7 @@ test('PrintersDiscovery controls native I/O and publishes Discovery events', () 
   assert.equal(nativeModule.stopDiscovery.mock.callCount(), 1);
   assert.deepEqual(
     discovered.map((printers) => printers.map((printer) => printer.target)),
-    [['TCP:192.168.1.10'], ['TCP:192.168.1.10', 'BT:00:22:15:7D:70:9C']]
+    [[], ['TCP:192.168.1.10'], ['TCP:192.168.1.10', 'BT:00:22:15:7D:70:9C']]
   );
   assert.deepEqual(statuses, ['discovering']);
   assert.equal(errors[0] instanceof PrinterDiscoveryError, true);
@@ -141,4 +143,36 @@ test('PrintersDiscovery throws actionable native start and stop failures', () =>
       error.methodName === 'stop'
   );
   stopStatus = 0;
+});
+
+test('PrintersDiscovery emits an empty snapshot only after native start succeeds', () => {
+  const snapshots = [];
+  const removeDiscovery = PrintersDiscovery.onDiscovery((printers) => {
+    snapshots.push(printers.map((printer) => printer.target));
+  });
+
+  PrintersDiscovery.start({ autoStop: false });
+  emit('onDiscovery', {
+    target: 'TCP:10.0.0.5',
+    deviceName: 'TM-T88V',
+    deviceType: 1,
+    ipAddress: '10.0.0.5',
+    macAddress: '00:11:22:33:44:55',
+    bdAddress: '',
+  });
+  PrintersDiscovery.stop();
+
+  startStatus = 5;
+  assert.throws(
+    () => PrintersDiscovery.start({ autoStop: false }),
+    (error) => error instanceof PrinterDiscoveryError && error.status === 'ERR_ILLEGAL'
+  );
+  startStatus = 0;
+
+  assert.deepEqual(snapshots.at(-1), ['TCP:10.0.0.5']);
+
+  PrintersDiscovery.start({ autoStop: false });
+  assert.deepEqual(snapshots.at(-1), []);
+
+  removeDiscovery();
 });

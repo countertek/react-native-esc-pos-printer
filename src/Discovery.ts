@@ -82,18 +82,27 @@ function discoveryError(statusCode: number, methodName: string): PrinterDiscover
 }
 
 const discoveredPrinters = new Map<string, DeviceInfo>();
+const discoveryListeners = new Set<(printers: DeviceInfo[]) => void>();
 let autoStopTimer: number | undefined;
+
+function notifyDiscovery(printers: DeviceInfo[]) {
+  for (const listener of [...discoveryListeners]) {
+    listener(printers);
+  }
+}
 
 export const PrintersDiscovery = {
   start(params: DiscoveryStartParams = {}): void {
     clearTimeout(autoStopTimer);
     autoStopTimer = undefined;
-    discoveredPrinters.clear();
 
     const status = ReactNativeEscPosPrinterModule.startDiscovery();
     if (status !== 0) {
       throw discoveryError(status, 'start');
     }
+
+    discoveredPrinters.clear();
+    notifyDiscovery([]);
 
     if (params.autoStop !== false) {
       autoStopTimer = setTimeout(() => {
@@ -114,6 +123,7 @@ export const PrintersDiscovery = {
   },
 
   onDiscovery(listener: (printers: DeviceInfo[]) => void): () => void {
+    discoveryListeners.add(listener);
     const subscription = ReactNativeEscPosPrinterModule.addListener('onDiscovery', (printer) => {
       const publicPrinter: DeviceInfo = {
         ...printer,
@@ -122,7 +132,10 @@ export const PrintersDiscovery = {
       discoveredPrinters.set(publicPrinter.target, publicPrinter);
       listener([...discoveredPrinters.values()]);
     });
-    return () => subscription.remove();
+    return () => {
+      discoveryListeners.delete(listener);
+      subscription.remove();
+    };
   },
 
   onStatusChange(listener: (status: DiscoveryStatus) => void): () => void {

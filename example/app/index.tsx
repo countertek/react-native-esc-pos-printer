@@ -11,18 +11,24 @@ export default function DiscoveryScreen() {
   const { printers, isDiscovering, printerError, start, stop } = usePrintersDiscovery();
   const [permission, setPermission] = useState<PermissionResponse | null>(null);
   const [permissionError, setPermissionError] = useState<string | null>(null);
+  const [isRequestingPermission, setIsRequestingPermission] = useState(false);
 
   async function requestPermissionAndStart() {
+    if (isDiscovering || isRequestingPermission) {
+      return;
+    }
+
     setPermissionError(null);
+    setIsRequestingPermission(true);
     try {
       const current = await getDiscoveryPermissions();
       const next = current.granted ? current : await requestDiscoveryPermissions();
       setPermission(next);
-      if (next.granted) {
-        start();
-      }
+      start();
     } catch (error) {
       setPermissionError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setIsRequestingPermission(false);
     }
   }
 
@@ -47,7 +53,7 @@ export default function DiscoveryScreen() {
           <Text style={styles.title}>Printer Discovery</Text>
           <View style={styles.actions}>
             <Button
-              disabled={isDiscovering}
+              disabled={isDiscovering || isRequestingPermission}
               onPress={() => void requestPermissionAndStart()}
               title="Find printers"
             />
@@ -56,14 +62,14 @@ export default function DiscoveryScreen() {
           {errorMessage ? <Text style={styles.error}>{errorMessage}</Text> : null}
           {!errorMessage && permission && !permission.granted ? (
             <Text style={styles.error}>
-              Discovery permission denied. Enable Bluetooth, Nearby Devices, or Location in
-              Settings.
+              Bluetooth permission denied. LAN and USB printers can still be found. Enable
+              Bluetooth, Nearby Devices, or Location in Settings for Bluetooth printers.
             </Text>
           ) : null}
           {!errorMessage && isDiscovering ? (
             <Text style={styles.status}>Finding printers…</Text>
           ) : null}
-          {!errorMessage && permission?.granted && !isDiscovering && printers.length === 0 ? (
+          {!errorMessage && permission && !isDiscovering && printers.length === 0 ? (
             <Text style={styles.status}>
               No printers found. Check Local Network permission and printer connectivity.
             </Text>

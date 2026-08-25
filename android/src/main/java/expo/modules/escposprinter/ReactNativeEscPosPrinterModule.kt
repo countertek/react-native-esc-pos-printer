@@ -66,12 +66,28 @@ class ReactNativeEscPosPrinterModule : Module() {
 
     Function("stopDiscovery") {
       try {
-        Discovery.stop()
+        stopDiscoveryUntilSettled()
         sendEvent("onStatusChange", bundleOf("status" to "inactive"))
         0
       } catch (error: Epos2Exception) {
         sendDiscoveryError(error, "stop")
         error.errorStatus
+      }
+    }
+  }
+
+  private fun stopDiscoveryUntilSettled() {
+    var remainingAttempts = 20
+    while (true) {
+      try {
+        Discovery.stop()
+        return
+      } catch (error: Epos2Exception) {
+        if (error.errorStatus != Epos2Exception.ERR_PROCESSING || remainingAttempts == 0) {
+          throw error
+        }
+        remainingAttempts -= 1
+        Thread.sleep(50)
       }
     }
   }

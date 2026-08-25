@@ -30,7 +30,7 @@ public class ReactNativeEscPosPrinterModule: Module {
   private lazy var bluetoothDelegate = BluetoothPermissionDelegate(module: self)
   private lazy var discoveryDelegate = DiscoveryDelegate(module: self)
   private var bluetoothManager: CBCentralManager?
-  private var permissionPromise: Promise?
+  private var permissionPromises: [Promise] = []
 
   public func definition() -> ModuleDefinition {
     Name("ReactNativeEscPosPrinter")
@@ -47,8 +47,10 @@ public class ReactNativeEscPosPrinterModule: Module {
         return
       }
 
-      permissionPromise = promise
-      bluetoothManager = CBCentralManager(delegate: bluetoothDelegate, queue: .main)
+      permissionPromises.append(promise)
+      if bluetoothManager == nil {
+        bluetoothManager = CBCentralManager(delegate: bluetoothDelegate, queue: .main)
+      }
     }
 
     Function("startDiscovery") { () -> Int in
@@ -62,7 +64,7 @@ public class ReactNativeEscPosPrinterModule: Module {
     }
 
     Function("stopDiscovery") { () -> Int in
-      let result = Epos2Discovery.stop()
+      let result = self.stopDiscoveryUntilSettled()
       if result == EPOS2_SUCCESS.rawValue {
         sendEvent("onStatusChange", ["status": "inactive"])
       } else {
@@ -73,15 +75,15 @@ public class ReactNativeEscPosPrinterModule: Module {
   }
 
   fileprivate func didUpdateBluetoothAuthorization() {
-    guard
-      let promise = permissionPromise,
-      CBCentralManager.authorization != .notDetermined
-    else {
+    guard CBCentralManager.authorization != .notDetermined else {
       return
     }
 
-    promise.resolve(Self.discoveryPermissionResponse())
-    permissionPromise = nil
+    let response = Self.discoveryPermissionResponse()
+    for promise in permissionPromises {
+      promise.resolve(response)
+    }
+    permissionPromises.removeAll()
     bluetoothManager = nil
   }
 
@@ -113,6 +115,17 @@ public class ReactNativeEscPosPrinterModule: Module {
       "canAskAgain": status == "undetermined",
       "expires": "never",
     ]
+  }
+
+  private func stopDiscoveryUntilSettled() -> Int32 {
+    var result = Epos2Discovery.stop()
+    var remainingAttempts = 20
+    while result == EPOS2_ERR_PROCESSING.rawValue && remainingAttempts > 0 {
+      Thread.sleep(forTimeInterval: 0.05)
+      result = Epos2Discovery.stop()
+      remainingAttempts -= 1
+    }
+    return result
   }
 
   private func sendDiscoveryError(_ code: Int32, methodName: String) {

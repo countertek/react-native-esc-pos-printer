@@ -18,11 +18,11 @@ import {
 } from '@countertek/react-native-esc-pos-printer';
 
 const current = await getDiscoveryPermissions();
-const permission = current.granted ? current : await requestDiscoveryPermissions();
-
-if (permission.granted) {
-  PrintersDiscovery.start();
+if (!current.granted) {
+  await requestDiscoveryPermissions();
 }
+
+PrintersDiscovery.start();
 ```
 
 Subscribe with `PrintersDiscovery.onDiscovery`, `onStatusChange`, and `onError`,
