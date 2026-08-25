@@ -56,7 +56,7 @@ usePrintersDiscovery(): {
 
 `PrinterStatus` is only `connection`, `online`, `coverOpen`, `paper`, `errorStatus`, each `{ statusCode, status, message }`.
 
-`PrinterConstants` is a TypeScript enum/const object for TRUE/FALSE/UNKNOWN, ALIGN_*, CUT_*, MODEL_*, LANG_*, PARAM_*, and the status codes those five fields need. No native `getConstants()` dump.
+`PrinterConstants` is a TypeScript enum/const object for TRUE/FALSE/UNKNOWN, `ALIGN_*`, `CUT_*`, `MODEL_*`, `LANG_*`, `PARAM_*`, and the status codes those five fields need. No native `getConstants()` dump.
 
 `PrinterError` / `PrinterDiscoveryError` throw. They carry `status`, `message`, `methodName`. `connect` on an already-connected Printer succeeds. Nested `run` on the same Printer throws. `run` returns the callback’s value. If `run` exits without a successful `sendData`, the Command Buffer is cleared.
 
@@ -64,9 +64,7 @@ usePrintersDiscovery(): {
 
 ## Native
 
-Swift and Kotlin `ModuleDefinition` wrapping Epson ePOS SDK **iOS 2.37.0** and **Android 2.37.0**. Do not port ObjC/Java `ThePrinter`. Infer series from Device Name. Hide `beginTransaction` / `endTransaction` inside send.
-
-Commit Epson binaries in-repo (NFC-style): `ios/Frameworks/` and `android/libs/` (plus `jniLibs` if the SDK needs them). Copy `EULA.en.txt` beside them. Read that EULA first; if redistribution inside this npm package is not allowed, stop. Do not use `react-native-esc-pos-printer-sdk`.
+Swift and Kotlin `ModuleDefinition` wrapping the vendored Epson ePOS SDK. [ADR 0004](adr/0004-vendor-epson-epos-sdk-2.37-binaries.md) owns the supported versions, binary layout, and redistribution gate. Do not port ObjC/Java `ThePrinter`. Infer series from Device Name. Hide `beginTransaction` / `endTransaction` inside send.
 
 ## Example
 
@@ -89,7 +87,6 @@ Routes: Discovery (hook + permission request + list) and SimplePrint (connect, `
 - [#13](https://github.com/countertek/react-native-esc-pos-printer/issues/13) `getPrinterSetting`
 - [#14](https://github.com/countertek/react-native-esc-pos-printer/issues/14) remaining Printer Status fields
 - [#15](https://github.com/countertek/react-native-esc-pos-printer/issues/15) remaining Epson constants
-
 
 ## Done when
 
