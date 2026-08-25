@@ -1,1 +1,0 @@
-export { usePrintersDiscovery } from './usePrintersDiscovery';

@@ -1,0 +1,26 @@
+{
+  "expo": {
+    "name": "ESC/POS Printer Example",
+    "slug": "react-native-esc-pos-printer-example",
+    "scheme": "escposprinterexample",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "plugins": [
+      "expo-router",
+      "expo-dev-client",
+      "@countertek/react-native-esc-pos-printer",
+      "expo-status-bar"
+    ],
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "expo.modules.escposprinter.example"
+    },
+    "android": {
+      "package": "expo.modules.escposprinter.example"
+    },
+    "experiments": {
+      "typedRoutes": true
+    }
+  }
+}

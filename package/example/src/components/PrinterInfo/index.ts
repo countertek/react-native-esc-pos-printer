@@ -1,1 +1,0 @@
-export { PrinterInfo } from './PrinterInfo';

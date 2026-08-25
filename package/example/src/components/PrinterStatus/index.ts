@@ -1,1 +1,0 @@
-export { PrinterStatus } from './PrinterStatus';

@@ -1,1 +1,0 @@
-export { ScreenTitle } from './ScreenTitle';

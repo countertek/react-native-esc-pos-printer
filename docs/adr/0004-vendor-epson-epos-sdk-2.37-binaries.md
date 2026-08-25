@@ -1,3 +1,3 @@
 # Vendor Epson ePOS SDK 2.37 Binaries In This Package
 
-iOS **2.37.0** and Android **2.37.0a** ship inside `ios/` and `android/` (NFC-style vendoring). We do not depend on `react-native-esc-pos-printer-sdk` and do not ask consumers to download Epson’s zip. Binaries land in the repo only after `EULA.en.txt` in the 2.37 zips is read and permits shipping them inside a third-party npm library. If it does not, stop and choose another distribution path.
+iOS **2.37.0** and Android **2.37.0a** are committed in this repo the same way NFC commits ACS: iOS XCFrameworks under `ios/Frameworks/`, Android JARs/AARs and `jniLibs` under `android/libs/` (and `jniLibs` as the SDK requires). Consumers do not download Epson’s zip or depend on `react-native-esc-pos-printer-sdk`. Copy `EULA.en.txt` next to the binaries. Read that EULA before the commit; if it does not allow shipping inside a third-party npm library, stop.

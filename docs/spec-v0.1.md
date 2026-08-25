@@ -66,7 +66,7 @@ usePrintersDiscovery(): {
 
 Swift and Kotlin `ModuleDefinition` wrapping Epson ePOS SDK **iOS 2.37.0** and **Android 2.37.0a**. Do not port ObjC/Java `ThePrinter`. Infer series from Device Name. Hide `beginTransaction` / `endTransaction` inside send.
 
-Fetch the 2.37 zips, read `EULA.en.txt`, vendor binaries in `ios/` and `android/` only if that EULA allows shipping them inside a third-party npm library. If it does not, stop.
+Commit Epson binaries in-repo (NFC-style): `ios/Frameworks/` and `android/libs/` (plus `jniLibs` if the SDK needs them). Copy `EULA.en.txt` beside them. Read that EULA first; if redistribution inside this npm package is not allowed, stop. Do not use `react-native-esc-pos-printer-sdk`.
 
 ## Example
 

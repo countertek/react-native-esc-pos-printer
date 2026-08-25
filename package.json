@@ -1,0 +1,47 @@
+{
+  "name": "@countertek/react-native-esc-pos-printer",
+  "version": "0.1.0",
+  "description": "Expo native module for Epson TM ESC/POS printers",
+  "main": "build/index.js",
+  "react-native": "src/index.ts",
+  "types": "build/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "lint": "eslint src/",
+    "test": "node --test",
+    "typecheck": "tsc --noEmit",
+    "prepare": "pnpm build"
+  },
+  "keywords": [
+    "react-native",
+    "expo",
+    "esc-pos",
+    "epson"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/countertek/react-native-esc-pos-printer.git"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "bugs": {
+    "url": "https://github.com/countertek/react-native-esc-pos-printer/issues"
+  },
+  "license": "MIT",
+  "homepage": "https://github.com/countertek/react-native-esc-pos-printer#readme",
+  "devDependencies": {
+    "eslint": "~9.39.4",
+    "eslint-config-universe": "^15.0.3",
+    "expo": "^56.0.11",
+    "prettier": "^3.0.0",
+    "react": "19.2.3",
+    "react-native": "0.85.3",
+    "typescript": "~6.0.3"
+  },
+  "peerDependencies": {
+    "expo": "*",
+    "react": "*",
+    "react-native": "*"
+  }
+}
