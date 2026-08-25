@@ -1,0 +1,3 @@
+# Rewrite The Session Wrapper In Swift And Kotlin
+
+Our Printer session wrapper is written in Swift and Kotlin. The ObjC/Java `ThePrinter` from the fork is not ported. We still link Epson's ePOS SDK (Objective-C `Epos2Printer` / Java `com.epson.epos2.printer.Printer`) and only rewrite our adapter. First shippable surface is Discovery, connect, disconnect, `run`, the text family (text, align, size, style, lang, smooth, feed, line space, cut), and send, plus `PrintersDiscovery` / `usePrintersDiscovery`. Image, barcode, QR, view-shot, monitor, and `tryToConnectUntil` are separate issues, not a 1:1 translation of `ThePrinter`.
