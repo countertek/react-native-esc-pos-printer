@@ -3,6 +3,7 @@
   "version": "0.1.0",
   "description": "Expo native module for Epson TM ESC/POS printers",
   "main": "build/index.js",
+  "react-native": "src/index.ts",
   "types": "build/index.d.ts",
   "scripts": {
     "build": "tsc",
