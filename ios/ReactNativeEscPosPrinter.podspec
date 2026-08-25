@@ -11,6 +11,7 @@ Pod::Spec.new do |s|
 
   s.dependency 'ExpoModulesCore'
   s.source_files = 'ReactNativeEscPosPrinterModule.swift'
+  s.vendored_frameworks = 'Frameworks/libepos2.xcframework'
   s.pod_target_xcconfig = {
     'DEFINES_MODULE' => 'YES',
   }

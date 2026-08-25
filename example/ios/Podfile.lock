@@ -2758,7 +2758,7 @@ SPEC CHECKSUMS:
   ReactCodegen: c910ae577a0ccf211fd3e8558403d7394c443323
   ReactCommon: 7dfc3250793bf36cf221096ff59e1179e13eef7f
   ReactNativeDependencies: c17382fd2adc2718df76037db72bd23005b2d803
-  ReactNativeEscPosPrinter: f894e9f6daf46b6d9b3ae07a7499b63c7fe4db14
+  ReactNativeEscPosPrinter: 09b3c4f9c1419f8fcd5d86ea3a7dbbcec560e65d
   RNCMaskedView: eb2b2e538afa907f05a5848a1a1ac26092e6fec9
   RNGestureHandler: 0cd8fb4d4d2eea71ef48ee0e52656138a9ff7343
   RNReanimated: 3a67274c1ff852c7bfabde63656ab8831620aa29
