@@ -2,8 +2,32 @@
 
 Expo native module for Epson TM ESC/POS printers.
 
-The package is currently a development-build scaffold. Discovery, printer sessions,
-and printing are not implemented yet.
+Discovery is available through `PrintersDiscovery` and `usePrintersDiscovery`.
+Printer sessions and printing are not implemented yet.
+
+## Discovery
+
+Add the package to the Expo app's `plugins` array, rebuild the development
+client, then request permission before starting Discovery:
+
+```ts
+import {
+  PrintersDiscovery,
+  getDiscoveryPermissions,
+  requestDiscoveryPermissions,
+} from '@countertek/react-native-esc-pos-printer';
+
+const current = await getDiscoveryPermissions();
+const permission = current.granted ? current : await requestDiscoveryPermissions();
+
+if (permission.granted) {
+  PrintersDiscovery.start();
+}
+```
+
+Subscribe with `PrintersDiscovery.onDiscovery`, `onStatusChange`, and `onError`,
+or use `usePrintersDiscovery` for React state. The config plugin writes the
+required Bluetooth, local-network, and external-accessory permission entries.
 
 ## Documentation
 
