@@ -140,6 +140,7 @@ export class Printer {
   readonly target!: string;
   readonly deviceName!: string;
   private readonly lang!: number;
+  private sessionOp: Promise<void> = Promise.resolve();
 
   constructor({ target, deviceName, lang = PrinterConstants.MODEL_ANK }: PrinterParams) {
     const existing = Printer.instances.get(target);
@@ -154,15 +155,17 @@ export class Printer {
   }
 
   async connect(timeout = 15000): Promise<void> {
-    const status = await ReactNativeEscPosPrinterModule.connectPrinter(
-      this.target,
-      this.deviceName,
-      this.lang,
-      timeout
-    );
-    if (status !== 0) {
-      throw connectError(status);
-    }
+    return this.enqueueSessionOp(async () => {
+      const status = await ReactNativeEscPosPrinterModule.connectPrinter(
+        this.target,
+        this.deviceName,
+        this.lang,
+        timeout
+      );
+      if (status !== 0) {
+        throw connectError(status);
+      }
+    });
   }
 
   async getStatus(): Promise<PrinterStatus> {
@@ -181,9 +184,20 @@ export class Printer {
   }
 
   async disconnect(): Promise<void> {
-    const status = await ReactNativeEscPosPrinterModule.disconnectPrinter(this.target);
-    if (status !== 0) {
-      throw disconnectError(status);
-    }
+    return this.enqueueSessionOp(async () => {
+      const status = await ReactNativeEscPosPrinterModule.disconnectPrinter(this.target);
+      if (status !== 0) {
+        throw disconnectError(status);
+      }
+    });
+  }
+
+  private enqueueSessionOp<T>(operation: () => Promise<T>): Promise<T> {
+    const result = this.sessionOp.then(operation);
+    this.sessionOp = result.then(
+      () => undefined,
+      () => undefined
+    );
+    return result;
   }
 }
