@@ -37,6 +37,10 @@ public class ReactNativeEscPosPrinterModule: Module {
 
     Events("onDiscovery", "onStatusChange", "onError")
 
+    OnDestroy {
+      _ = Epos2Discovery.stop()
+    }
+
     AsyncFunction("getDiscoveryPermissions") {
       return Self.discoveryPermissionResponse()
     }

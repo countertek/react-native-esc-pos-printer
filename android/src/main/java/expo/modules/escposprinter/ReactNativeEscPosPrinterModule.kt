@@ -33,6 +33,13 @@ class ReactNativeEscPosPrinterModule : Module() {
 
     Events("onDiscovery", "onStatusChange", "onError")
 
+    OnDestroy {
+      try {
+        Discovery.stop()
+      } catch (_: Epos2Exception) {
+      }
+    }
+
     AsyncFunction("getDiscoveryPermissions") { promise: Promise ->
       Permissions.getPermissionsWithPermissionsManager(
         appContext.permissions,

@@ -246,3 +246,43 @@ test('usePrintersDiscovery reports inactive when start fails with no running sea
   discovery = renderHook(() => usePrintersDiscovery());
   assert.equal(discovery.isDiscovering, false);
 });
+
+test('failed overlapping start leaves the in-flight auto-stop timer running', () => {
+  mock.timers.enable({ apis: ['setTimeout'] });
+  try {
+    PrintersDiscovery.start({ timeout: 5000 });
+    startStatus = 5;
+    assert.throws(
+      () => PrintersDiscovery.start({ timeout: 1000 }),
+      (error) => error instanceof PrinterDiscoveryError && error.status === 'ERR_ILLEGAL'
+    );
+    startStatus = 0;
+
+    const stopsBeforeTick = nativeModule.stopDiscovery.mock.callCount();
+    mock.timers.tick(4999);
+    assert.equal(nativeModule.stopDiscovery.mock.callCount(), stopsBeforeTick);
+    mock.timers.tick(1);
+    assert.equal(nativeModule.stopDiscovery.mock.callCount(), stopsBeforeTick + 1);
+  } finally {
+    mock.timers.reset();
+  }
+});
+
+test('usePrintersDiscovery stays discovering when a second start fails', () => {
+  resetHooks();
+  let discovery = renderHook(() => usePrintersDiscovery());
+  discovery.start({ autoStop: false });
+  discovery = renderHook(() => usePrintersDiscovery());
+  assert.equal(discovery.isDiscovering, true);
+
+  startStatus = 5;
+  assert.throws(
+    () => discovery.start({ autoStop: false }),
+    (error) => error instanceof PrinterDiscoveryError && error.status === 'ERR_ILLEGAL'
+  );
+  startStatus = 0;
+  discovery = renderHook(() => usePrintersDiscovery());
+  assert.equal(discovery.isDiscovering, true);
+
+  discovery.stop();
+});

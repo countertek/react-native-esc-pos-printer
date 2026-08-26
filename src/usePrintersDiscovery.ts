@@ -36,13 +36,8 @@ export function usePrintersDiscovery(): PrintersDiscoveryState {
 
   const start = useCallback((params?: DiscoveryStartParams) => {
     setPrinterError(null);
+    PrintersDiscovery.start(params);
     setIsDiscovering(true);
-    try {
-      PrintersDiscovery.start(params);
-    } catch (error) {
-      setIsDiscovering(false);
-      throw error;
-    }
   }, []);
 
   const stop = useCallback(() => {

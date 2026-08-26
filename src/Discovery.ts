@@ -93,14 +93,13 @@ function notifyDiscovery(printers: DeviceInfo[]) {
 
 export const PrintersDiscovery = {
   start(params: DiscoveryStartParams = {}): void {
-    clearTimeout(autoStopTimer);
-    autoStopTimer = undefined;
-
     const status = ReactNativeEscPosPrinterModule.startDiscovery();
     if (status !== 0) {
       throw discoveryError(status, 'start');
     }
 
+    clearTimeout(autoStopTimer);
+    autoStopTimer = undefined;
     discoveredPrinters.clear();
     notifyDiscovery([]);
 
