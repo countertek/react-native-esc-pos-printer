@@ -4,6 +4,7 @@ export default function Layout() {
   return (
     <Stack screenOptions={{ headerShadowVisible: false }}>
       <Stack.Screen name="index" options={{ title: 'Discovery' }} />
+      <Stack.Screen name="printer" options={{ title: 'Printer' }} />
     </Stack>
   );
 }

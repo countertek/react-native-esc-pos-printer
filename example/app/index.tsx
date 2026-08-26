@@ -4,8 +4,9 @@ import {
   usePrintersDiscovery,
 } from '@countertek/react-native-esc-pos-printer';
 import type { PermissionResponse } from 'expo';
+import { Link, router } from 'expo-router';
 import { useState } from 'react';
-import { Button, FlatList, StyleSheet, Text, View } from 'react-native';
+import { Button, FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
 
 export default function DiscoveryScreen() {
   const { printers, isDiscovering, printerError, start, stop } = usePrintersDiscovery();
@@ -58,6 +59,7 @@ export default function DiscoveryScreen() {
               title="Find printers"
             />
             <Button disabled={!isDiscovering} onPress={stopDiscovery} title="Stop" />
+            <Button onPress={() => router.push('/printer')} title="Enter Target" />
           </View>
           {errorMessage ? <Text style={styles.error}>{errorMessage}</Text> : null}
           {!errorMessage && permission && !permission.granted ? (
@@ -80,14 +82,22 @@ export default function DiscoveryScreen() {
         </View>
       }
       renderItem={({ item }) => (
-        <View style={styles.printer}>
-          <Text style={styles.deviceName}>{item.deviceName || 'Unknown Device Name'}</Text>
-          <Text>Target: {item.target}</Text>
-          <Text>Device type: {item.deviceType}</Text>
-          <Text>IP address: {item.ipAddress || '—'}</Text>
-          <Text>MAC address: {item.macAddress || '—'}</Text>
-          <Text>Bluetooth address: {item.bdAddress || '—'}</Text>
-        </View>
+        <Link
+          asChild
+          href={{
+            pathname: '/printer',
+            params: { target: item.target, deviceName: item.deviceName },
+          }}
+        >
+          <Pressable style={styles.printer}>
+            <Text style={styles.deviceName}>{item.deviceName || 'Unknown Device Name'}</Text>
+            <Text>Target: {item.target}</Text>
+            <Text>Device type: {item.deviceType}</Text>
+            <Text>IP address: {item.ipAddress || '—'}</Text>
+            <Text>MAC address: {item.macAddress || '—'}</Text>
+            <Text>Bluetooth address: {item.bdAddress || '—'}</Text>
+          </Pressable>
+        </Link>
       )}
     />
   );

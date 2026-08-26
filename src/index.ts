@@ -5,6 +5,9 @@ export { PrintersDiscovery, PrinterDiscoveryError } from './Discovery';
 export type { DeviceInfo, DiscoveryStartParams, DiscoveryStatus } from './Discovery';
 export { usePrintersDiscovery } from './usePrintersDiscovery';
 export type { PrintersDiscoveryState } from './usePrintersDiscovery';
+export { Printer, PrinterError } from './Printer';
+export type { PrinterParams, PrinterStatus, PrinterStatusField } from './Printer';
+export { PrinterConstants } from './PrinterConstants';
 
 export function getDiscoveryPermissions() {
   return ReactNativeEscPosPrinterModule.getDiscoveryPermissions();
