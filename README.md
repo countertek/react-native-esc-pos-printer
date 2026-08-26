@@ -55,6 +55,16 @@ pnpm ios
 pnpm android
 ```
 
+Android builds need JDK 17 or 21. Android Studio's bundled JBR 25 fails native
+CMake (`react-native-worklets:configureCMakeDebug`) with a restricted
+`java.lang.System` warning. `pnpm android` prefers Homebrew `openjdk@17` when
+`JAVA_HOME` is unset or too new:
+
+```sh
+brew install openjdk@17
+export JAVA_HOME="$(brew --prefix openjdk@17)/libexec/openjdk.jdk/Contents/Home"
+```
+
 The example uses Expo Router and a development client. Expo Go is not supported
 because this package contains native modules.
 

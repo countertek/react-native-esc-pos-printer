@@ -5,7 +5,7 @@
   "private": true,
   "scripts": {
     "start": "expo start --dev-client",
-    "android": "expo run:android",
+    "android": "node ./scripts/run-android.mjs",
     "ios": "expo run:ios",
     "typecheck": "tsc --noEmit"
   },
