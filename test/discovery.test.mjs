@@ -1,7 +1,6 @@
 import assert from 'node:assert/strict';
 import { registerHooks } from 'node:module';
 import { mock, test } from 'node:test';
-
 const granted = {
   status: 'granted',
   granted: true,
@@ -41,7 +40,7 @@ registerHooks({
     }
     if (specifier === 'react') {
       return {
-        url: 'data:text/javascript,export function useCallback(fn){return fn};export function useEffect(){};export function useState(v){return [v,()=>{}]}',
+        url: new URL('./react-test-hooks.mjs', import.meta.url).href,
         shortCircuit: true,
       };
     }
@@ -55,6 +54,8 @@ globalThis.__escPosNativeModule = nativeModule;
 
 const { PrintersDiscovery, PrinterDiscoveryError } = await import('../src/Discovery.ts');
 const { getDiscoveryPermissions, requestDiscoveryPermissions } = await import('../src/index.ts');
+const { usePrintersDiscovery } = await import('../src/usePrintersDiscovery.ts');
+const { renderHook, resetHooks } = await import('./react-test-hooks.mjs');
 
 test('permission helpers delegate to the native package seam', async () => {
   assert.deepEqual(await getDiscoveryPermissions(), granted);
@@ -175,4 +176,73 @@ test('PrintersDiscovery emits an empty snapshot only after native start succeeds
   assert.deepEqual(snapshots.at(-1), []);
 
   removeDiscovery();
+});
+
+test('Bluetooth denial does not block Discovery start', async () => {
+  const denied = {
+    status: 'denied',
+    granted: false,
+    canAskAgain: false,
+    expires: 'never',
+  };
+  nativeModule.getDiscoveryPermissions.mock.mockImplementation(async () => denied);
+  nativeModule.requestDiscoveryPermissions.mock.mockImplementation(async () => denied);
+  const startsBefore = nativeModule.startDiscovery.mock.callCount();
+
+  const current = await getDiscoveryPermissions();
+  const next = current.granted ? current : await requestDiscoveryPermissions();
+  assert.equal(next.granted, false);
+  PrintersDiscovery.start({ autoStop: false });
+
+  assert.equal(nativeModule.startDiscovery.mock.callCount(), startsBefore + 1);
+  nativeModule.getDiscoveryPermissions.mock.mockImplementation(async () => granted);
+  nativeModule.requestDiscoveryPermissions.mock.mockImplementation(async () => granted);
+  PrintersDiscovery.stop();
+});
+
+test('usePrintersDiscovery sets discovering at the start and stop boundary', () => {
+  resetHooks();
+  let discovery = renderHook(() => usePrintersDiscovery());
+  assert.equal(discovery.isDiscovering, false);
+  assert.deepEqual(discovery.printers, []);
+
+  discovery.start({ autoStop: false });
+  discovery = renderHook(() => usePrintersDiscovery());
+  assert.equal(discovery.isDiscovering, true);
+  assert.deepEqual(discovery.printers, []);
+
+  emit('onDiscovery', {
+    target: 'USB:',
+    deviceName: 'TM-T20III',
+    deviceType: 1,
+    ipAddress: '',
+    macAddress: '',
+    bdAddress: '',
+  });
+  discovery = renderHook(() => usePrintersDiscovery());
+  assert.deepEqual(
+    discovery.printers.map((printer) => ({
+      target: printer.target,
+      deviceName: printer.deviceName,
+      deviceType: printer.deviceType,
+    })),
+    [{ target: 'USB:', deviceName: 'TM-T20III', deviceType: 'TYPE_PRINTER' }]
+  );
+
+  discovery.stop();
+  discovery = renderHook(() => usePrintersDiscovery());
+  assert.equal(discovery.isDiscovering, false);
+});
+
+test('usePrintersDiscovery reports inactive when start fails with no running search', () => {
+  resetHooks();
+  let discovery = renderHook(() => usePrintersDiscovery());
+  startStatus = 5;
+  assert.throws(
+    () => discovery.start({ autoStop: false }),
+    (error) => error instanceof PrinterDiscoveryError && error.status === 'ERR_ILLEGAL'
+  );
+  startStatus = 0;
+  discovery = renderHook(() => usePrintersDiscovery());
+  assert.equal(discovery.isDiscovering, false);
 });

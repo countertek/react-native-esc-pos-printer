@@ -26,8 +26,10 @@ PrintersDiscovery.start();
 ```
 
 Subscribe with `PrintersDiscovery.onDiscovery`, `onStatusChange`, and `onError`,
-or use `usePrintersDiscovery` for React state. The config plugin writes the
-required Bluetooth, local-network, and external-accessory permission entries.
+or use `usePrintersDiscovery` for React state. `granted` reports Bluetooth;
+start Discovery even when it is false so LAN and USB printers can still be
+found. The config plugin writes the required Bluetooth, local-network, and
+external-accessory permission entries.
 
 ## Documentation
 
