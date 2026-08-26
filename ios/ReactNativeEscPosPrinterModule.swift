@@ -30,6 +30,7 @@ private final class PrinterSession {
   let printer: Epos2Printer
   let lock = NSLock()
   var isConnected = false
+  var isClosed = false
   init?(deviceName: String, lang: Int) {
     guard let printer = Epos2Printer(
       printerSeries: printerSeries(for: deviceName),
@@ -60,8 +61,12 @@ public class ReactNativeEscPosPrinterModule: Module {
       let sessions = Array(printerSessions.values)
       printerSessions.removeAll()
       printerSessionLock.unlock()
-      for session in sessions where session.isConnected {
+      for session in sessions {
+        session.lock.lock()
         _ = disconnectUntilSettled(session)
+        session.isConnected = false
+        session.isClosed = true
+        session.lock.unlock()
       }
     }
 
@@ -194,6 +199,9 @@ public class ReactNativeEscPosPrinterModule: Module {
     }
     session.lock.lock()
     defer { session.lock.unlock() }
+    if session.isClosed {
+      return EPOS2_ERR_ILLEGAL.rawValue
+    }
     if session.isConnected {
       return EPOS2_SUCCESS.rawValue
     }

@@ -16,6 +16,7 @@ import expo.modules.kotlin.modules.ModuleDefinition
 
 private class PrinterSession(val printer: EpsonPrinter) {
   var isConnected = false
+  var isClosed = false
 }
 
 class ReactNativeEscPosPrinterModule : Module() {
@@ -50,12 +51,13 @@ class ReactNativeEscPosPrinterModule : Module() {
         snapshot
       }
       for (session in sessions) {
-        if (!session.isConnected) {
-          continue
-        }
-        try {
-          disconnectUntilSettled(session)
-        } catch (_: Epos2Exception) {
+        synchronized(session) {
+          try {
+            disconnectUntilSettled(session)
+          } catch (_: Epos2Exception) {
+          }
+          session.isConnected = false
+          session.isClosed = true
         }
       }
     }
@@ -169,6 +171,9 @@ class ReactNativeEscPosPrinterModule : Module() {
       return Epos2Exception.ERR_MEMORY
     }
     synchronized(session) {
+      if (session.isClosed) {
+        return Epos2Exception.ERR_ILLEGAL
+      }
       if (session.isConnected) {
         return 0
       }
