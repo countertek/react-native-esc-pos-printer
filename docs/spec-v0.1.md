@@ -54,13 +54,15 @@ usePrintersDiscovery(): {
 
 `DeviceInfo` keeps Discovery fields: `target`, `deviceName`, `deviceType`, `ipAddress`, `macAddress`, `bdAddress`.
 
+`DiscoveryStartParams` is `timeout?: number` (default 5000 ms) and `autoStop?: boolean` (default true). A successful `start()` notifies `onDiscovery` listeners with `[]`; a failed `start()` leaves the previous snapshot.
+
 `PrinterStatus` is only `connection`, `online`, `coverOpen`, `paper`, `errorStatus`, each `{ statusCode, status, message }`.
 
 `PrinterConstants` is a TypeScript enum/const object for TRUE/FALSE/UNKNOWN, `ALIGN_*`, `CUT_*`, `MODEL_*`, `LANG_*`, `PARAM_*`, and the status codes those five fields need. No native `getConstants()` dump.
 
 `PrinterError` / `PrinterDiscoveryError` throw. They carry `status`, `message`, `methodName`. `connect` on an already-connected Printer succeeds. Nested `run` on the same Printer throws. `run` returns the callback’s value. If `run` exits without a successful `sendData`, the Command Buffer is cleared.
 
-`getDiscoveryPermissions` / `requestDiscoveryPermissions` cover Bluetooth, local network, and USB as the OS requires. The config plugin writes the static permission entries. Consumers add `@countertek/react-native-esc-pos-printer` to `plugins`.
+`getDiscoveryPermissions` / `requestDiscoveryPermissions` report and request Bluetooth (Nearby Devices / Location on older Android). `granted` is not a start gate: call `start()` even when it is false so LAN and USB printers can still be found. The config plugin writes the static Bluetooth, local-network, and external-accessory entries. Consumers add `@countertek/react-native-esc-pos-printer` to `plugins`.
 
 ## Native
 
