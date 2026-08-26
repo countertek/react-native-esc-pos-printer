@@ -57,8 +57,14 @@ pnpm android
 
 Android builds need JDK 17 or 21. Android Studio's bundled JBR 25 fails native
 CMake (`react-native-worklets:configureCMakeDebug`) with a restricted
-`java.lang.System` warning. `pnpm android` prefers Homebrew `openjdk@17` when
-`JAVA_HOME` is unset or too new:
+`java.lang.System` warning. `pnpm android` uses `JAVA_HOME` when it is 17–21,
+otherwise a mise Java 17/21, then Homebrew `openjdk@17`:
+
+```sh
+mise install java@17
+```
+
+or:
 
 ```sh
 brew install openjdk@17
