@@ -87,8 +87,7 @@ export default function DiscoveryScreen() {
           href={{
             pathname: '/printer',
             params: { target: item.target, deviceName: item.deviceName },
-          }}
-        >
+          }}>
           <Pressable style={styles.printer}>
             <Text style={styles.deviceName}>{item.deviceName || 'Unknown Device Name'}</Text>
             <Text>Target: {item.target}</Text>
