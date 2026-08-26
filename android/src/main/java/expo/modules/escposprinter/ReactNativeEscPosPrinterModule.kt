@@ -34,6 +34,7 @@ class ReactNativeEscPosPrinterModule : Module() {
     )
   }
   private val printerSessions = mutableMapOf<String, PrinterSession>()
+  private var isDestroyed = false
 
   override fun definition() = ModuleDefinition {
     Name("ReactNativeEscPosPrinter")
@@ -46,6 +47,7 @@ class ReactNativeEscPosPrinterModule : Module() {
       } catch (_: Epos2Exception) {
       }
       val sessions = synchronized(printerSessions) {
+        isDestroyed = true
         val snapshot = printerSessions.values.toList()
         printerSessions.clear()
         snapshot
@@ -154,8 +156,11 @@ class ReactNativeEscPosPrinterModule : Module() {
     )
   }
 
-  private fun session(target: String, deviceName: String, lang: Int): PrinterSession {
+  private fun session(target: String, deviceName: String, lang: Int): PrinterSession? {
     synchronized(printerSessions) {
+      if (isDestroyed) {
+        return null
+      }
       printerSessions[target]?.let { return it }
       val context = requireNotNull(appContext.reactContext)
       val session = PrinterSession(EpsonPrinter(printerSeries(deviceName), lang, context))
@@ -166,7 +171,7 @@ class ReactNativeEscPosPrinterModule : Module() {
 
   private fun connectPrinter(target: String, deviceName: String, lang: Int, timeout: Int): Int {
     val session = try {
-      session(target, deviceName, lang)
+      session(target, deviceName, lang) ?: return Epos2Exception.ERR_ILLEGAL
     } catch (_: Epos2Exception) {
       return Epos2Exception.ERR_MEMORY
     }
@@ -227,7 +232,13 @@ class ReactNativeEscPosPrinterModule : Module() {
 
   private fun printerStatus(target: String, deviceName: String, lang: Int): Map<String, Int> {
     val session = try {
-      session(target, deviceName, lang)
+      session(target, deviceName, lang) ?: return mapOf(
+        "connection" to 0,
+        "online" to -3,
+        "coverOpen" to -3,
+        "paper" to -3,
+        "errorStatus" to -3
+      )
     } catch (_: Epos2Exception) {
       return mapOf(
         "connection" to 0,

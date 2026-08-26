@@ -49,6 +49,7 @@ public class ReactNativeEscPosPrinterModule: Module {
   private var permissionPromises: [Promise] = []
   private var printerSessions: [String: PrinterSession] = [:]
   private let printerSessionLock = NSLock()
+  private var isDestroyed = false
 
   public func definition() -> ModuleDefinition {
     Name("ReactNativeEscPosPrinter")
@@ -58,6 +59,7 @@ public class ReactNativeEscPosPrinterModule: Module {
     OnDestroy {
       _ = Epos2Discovery.stop()
       printerSessionLock.lock()
+      isDestroyed = true
       let sessions = Array(printerSessions.values)
       printerSessions.removeAll()
       printerSessionLock.unlock()
@@ -183,6 +185,9 @@ public class ReactNativeEscPosPrinterModule: Module {
   private func session(target: String, deviceName: String, lang: Int) -> PrinterSession? {
     printerSessionLock.lock()
     defer { printerSessionLock.unlock() }
+    if isDestroyed {
+      return nil
+    }
     if let existing = printerSessions[target] {
       return existing
     }
@@ -195,7 +200,10 @@ public class ReactNativeEscPosPrinterModule: Module {
 
   private func connectPrinter(target: String, deviceName: String, lang: Int, timeout: Int) -> Int32 {
     guard let session = session(target: target, deviceName: deviceName, lang: lang) else {
-      return EPOS2_ERR_MEMORY.rawValue
+      printerSessionLock.lock()
+      let destroyed = isDestroyed
+      printerSessionLock.unlock()
+      return destroyed ? EPOS2_ERR_ILLEGAL.rawValue : EPOS2_ERR_MEMORY.rawValue
     }
     session.lock.lock()
     defer { session.lock.unlock() }
