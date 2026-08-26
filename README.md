@@ -3,7 +3,8 @@
 Expo native module for Epson TM ESC/POS printers.
 
 Discovery is available through `PrintersDiscovery` and `usePrintersDiscovery`.
-Printer sessions and printing are not implemented yet.
+Connect a Printer with `connect`, `disconnect`, and `getStatus`. Printing is
+not implemented yet.
 
 ## Discovery
 
@@ -30,6 +31,23 @@ or use `usePrintersDiscovery` for React state. `granted` reports Bluetooth;
 start Discovery even when it is false so LAN and USB printers can still be
 found. The config plugin writes the required Bluetooth, local-network, and
 external-accessory permission entries.
+
+## Printer session
+
+```ts
+import { Printer } from '@countertek/react-native-esc-pos-printer';
+
+const printer = new Printer({
+  target: 'TCP:192.168.1.50',
+  deviceName: 'TM-T88V',
+});
+await printer.connect();
+const status = await printer.getStatus();
+await printer.disconnect();
+```
+
+`connect` on an already-connected Printer succeeds. `getStatus` returns
+`connection`, `online`, `coverOpen`, `paper`, and `errorStatus`.
 
 ## Documentation
 

@@ -237,15 +237,20 @@ public class ReactNativeEscPosPrinterModule: Module {
   }
 
   private func printerStatus(target: String, deviceName: String, lang: Int) -> [String: Int] {
-    guard let session = session(target: target, deviceName: deviceName, lang: lang),
-          let status = session.printer.getStatus() else {
-      return [
-        "connection": 0,
-        "online": -3,
-        "coverOpen": -3,
-        "paper": -3,
-        "errorStatus": -3,
-      ]
+    let unknown: [String: Int] = [
+      "connection": 0,
+      "online": -3,
+      "coverOpen": -3,
+      "paper": -3,
+      "errorStatus": -3,
+    ]
+    guard let session = session(target: target, deviceName: deviceName, lang: lang) else {
+      return unknown
+    }
+    session.lock.lock()
+    defer { session.lock.unlock() }
+    guard let status = session.printer.getStatus() else {
+      return unknown
     }
     return [
       "connection": Int(status.connection),

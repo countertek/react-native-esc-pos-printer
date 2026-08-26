@@ -44,13 +44,19 @@ class ReactNativeEscPosPrinterModule : Module() {
         Discovery.stop()
       } catch (_: Epos2Exception) {
       }
-      synchronized(printerSessions) {
-        printerSessions.values.forEach { session ->
-          if (session.isConnected) {
-            disconnectUntilSettled(session)
-          }
-        }
+      val sessions = synchronized(printerSessions) {
+        val snapshot = printerSessions.values.toList()
         printerSessions.clear()
+        snapshot
+      }
+      for (session in sessions) {
+        if (!session.isConnected) {
+          continue
+        }
+        try {
+          disconnectUntilSettled(session)
+        } catch (_: Epos2Exception) {
+        }
       }
     }
 
@@ -226,14 +232,16 @@ class ReactNativeEscPosPrinterModule : Module() {
         "errorStatus" to -3
       )
     }
-    val status = session.printer.status
-    return mapOf(
-      "connection" to status.connection,
-      "online" to status.online,
-      "coverOpen" to status.coverOpen,
-      "paper" to status.paper,
-      "errorStatus" to status.errorStatus
-    )
+    synchronized(session) {
+      val status = session.printer.status
+      return mapOf(
+        "connection" to status.connection,
+        "online" to status.online,
+        "coverOpen" to status.coverOpen,
+        "paper" to status.paper,
+        "errorStatus" to status.errorStatus
+      )
+    }
   }
 }
 

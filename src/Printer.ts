@@ -140,7 +140,6 @@ export class Printer {
   readonly target!: string;
   readonly deviceName!: string;
   private readonly lang!: number;
-  private connected = false;
 
   constructor({ target, deviceName, lang = PrinterConstants.MODEL_ANK }: PrinterParams) {
     const existing = Printer.instances.get(target);
@@ -155,10 +154,6 @@ export class Printer {
   }
 
   async connect(timeout = 15000): Promise<void> {
-    if (this.connected) {
-      return;
-    }
-
     const status = await ReactNativeEscPosPrinterModule.connectPrinter(
       this.target,
       this.deviceName,
@@ -168,7 +163,6 @@ export class Printer {
     if (status !== 0) {
       throw connectError(status);
     }
-    this.connected = true;
   }
 
   async getStatus(): Promise<PrinterStatus> {
@@ -187,14 +181,9 @@ export class Printer {
   }
 
   async disconnect(): Promise<void> {
-    if (!this.connected) {
-      return;
-    }
-
     const status = await ReactNativeEscPosPrinterModule.disconnectPrinter(this.target);
     if (status !== 0) {
       throw disconnectError(status);
     }
-    this.connected = false;
   }
 }
