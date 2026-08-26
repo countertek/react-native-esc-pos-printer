@@ -94,6 +94,34 @@ test('connect throws PrinterError with status, message, and methodName', async (
   nativeModule.connectPrinter.mock.mockImplementation(async () => connectStatus);
 });
 
+test('connect maps SDK recovery failure codes from both platforms', async () => {
+  const androidRecovery = new Printer({ target: 'TCP:10.0.0.7', deviceName: 'TM-T88V' });
+  nativeModule.connectPrinter.mock.mockImplementation(async () => 16);
+  await assert.rejects(
+    () => androidRecovery.connect(),
+    (error) => {
+      assert.ok(error instanceof PrinterError);
+      assert.equal(error.status, 'ERR_RECOVERY_FAILURE');
+      assert.equal(error.message, 'Failed to recover the Printer.');
+      assert.equal(error.methodName, 'connect');
+      return true;
+    }
+  );
+
+  const iosRecovery = new Printer({ target: 'TCP:10.0.0.8', deviceName: 'TM-T88V' });
+  nativeModule.connectPrinter.mock.mockImplementation(async () => 17);
+  await assert.rejects(
+    () => iosRecovery.connect(),
+    (error) => {
+      assert.ok(error instanceof PrinterError);
+      assert.equal(error.status, 'ERR_RECOVERY_FAILURE');
+      return true;
+    }
+  );
+
+  nativeModule.connectPrinter.mock.mockImplementation(async () => connectStatus);
+});
+
 test('getStatus returns slim Printer Status fields', async () => {
   nativeStatus = {
     connection: 1,

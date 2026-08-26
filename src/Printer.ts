@@ -50,7 +50,9 @@ const connectErrorByCode: Record<number, { status: string; message: string }> = 
   7: { status: 'ERR_NOT_FOUND', message: 'The Printer could not be found.' },
   8: { status: 'ERR_IN_USE', message: 'The Printer was in use.' },
   9: { status: 'ERR_TYPE_INVALID', message: 'The Printer type is different.' },
-  15: { status: 'ERR_RECOVERY_FAILURE', message: 'Failed to recover the Printer.' },
+  15: { status: 'ERR_UNSUPPORTED', message: 'This function is not supported on this Printer.' },
+  16: { status: 'ERR_RECOVERY_FAILURE', message: 'Failed to recover the Printer.' },
+  17: { status: 'ERR_RECOVERY_FAILURE', message: 'Failed to recover the Printer.' },
   255: { status: 'ERR_FAILURE', message: 'An unknown error occurred.' },
 };
 
