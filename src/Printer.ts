@@ -243,7 +243,11 @@ class PrinterCommandBuffer implements CommandBuffer {
     }
   }
 
-  private async add(methodName: string, invoke: () => Promise<number>): Promise<void> {
+  private add(methodName: string, invoke: () => Promise<number>): Promise<void> {
+    return printJobContext.bindPromise(this.performAdd(methodName, invoke));
+  }
+
+  private async performAdd(methodName: string, invoke: () => Promise<number>): Promise<void> {
     this.assertActive(methodName);
     const status = await invoke();
     if (status !== 0) {
@@ -310,8 +314,12 @@ class PrinterCommandBuffer implements CommandBuffer {
     return this.add('addCut', () => ReactNativeEscPosPrinterModule.addCut(this.target, type));
   }
 
-  async sendData(timeout = 5000): Promise<PrinterStatus> {
+  sendData(timeout = 5000): Promise<PrinterStatus> {
     this.assertActive('sendData');
+    return printJobContext.bindPromise(this.performSendData(timeout));
+  }
+
+  private async performSendData(timeout: number): Promise<PrinterStatus> {
     const raw = await ReactNativeEscPosPrinterModule.sendPrinterData(this.target, timeout);
     if (raw.result !== 0) {
       throw sendError(raw);
@@ -324,6 +332,22 @@ class PrinterCommandBuffer implements CommandBuffer {
 interface PrintJobContext {
   getStore(): object | undefined;
   run<R>(store: object, callback: () => R): R;
+  bindPromise<T>(promise: Promise<T>): Promise<T>;
+}
+
+type ThenCallback<T, R> = ((value: T) => R | PromiseLike<R>) | null | undefined;
+
+function enqueueFallbackJob(job: () => void) {
+  const enqueueJob = (
+    globalThis as {
+      HermesInternal?: { enqueueJob?: (next: () => void) => void };
+    }
+  ).HermesInternal?.enqueueJob;
+  if (typeof enqueueJob === 'function') {
+    enqueueJob(job);
+    return;
+  }
+  queueMicrotask(job);
 }
 
 function createPrintJobContext(): PrintJobContext {
@@ -336,17 +360,79 @@ function createPrintJobContext(): PrintJobContext {
     const asyncHooks =
       typeof getBuiltinModule === 'function'
         ? (getBuiltinModule('async_hooks') as {
-            AsyncLocalStorage?: new () => PrintJobContext;
+            AsyncLocalStorage?: new () => {
+              getStore(): object | undefined;
+              run<R>(store: object, callback: () => R): R;
+            };
           })
         : undefined;
     if (typeof asyncHooks?.AsyncLocalStorage === 'function') {
-      return new asyncHooks.AsyncLocalStorage();
+      const context = new asyncHooks.AsyncLocalStorage();
+      return {
+        getStore() {
+          return context.getStore();
+        },
+        run(store, callback) {
+          return context.run(store, callback);
+        },
+        bindPromise(promise) {
+          return promise;
+        },
+      };
     }
   } catch {
     // Environments without async_hooks still serialize sibling jobs.
   }
 
   let store: object | undefined;
+
+  function bindPromise<T>(promise: Promise<T>): Promise<T> {
+    const captured = store;
+    if (captured === undefined) {
+      return promise;
+    }
+
+    const bound = {
+      then<TResult1 = T, TResult2 = never>(
+        onFulfilled?: ThenCallback<T, TResult1>,
+        onRejected?: ThenCallback<unknown, TResult2>
+      ) {
+        return bindPromise(
+          promise.then(
+            (value) => resumeBoundCallback(captured, onFulfilled, value, false),
+            (reason) => resumeBoundCallback(captured, onRejected, reason, true)
+          ) as Promise<TResult1 | TResult2>
+        );
+      },
+    };
+    return bound as Promise<T>;
+  }
+
+  function resumeBoundCallback<V, R>(
+    captured: object,
+    callback: ThenCallback<V, R>,
+    value: V,
+    isReject: boolean
+  ): R | PromiseLike<R> {
+    const previous = store;
+    store = captured;
+    try {
+      if (typeof callback === 'function') {
+        return callback(value);
+      }
+      if (isReject) {
+        throw value;
+      }
+      return value as unknown as R;
+    } finally {
+      enqueueFallbackJob(() => {
+        if (store === captured) {
+          store = previous;
+        }
+      });
+    }
+  }
+
   return {
     getStore() {
       return store;
@@ -360,6 +446,7 @@ function createPrintJobContext(): PrintJobContext {
         store = previous;
       }
     },
+    bindPromise,
   };
 }
 
