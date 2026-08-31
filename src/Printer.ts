@@ -321,6 +321,50 @@ class PrinterCommandBuffer implements CommandBuffer {
   }
 }
 
+interface PrintJobContext {
+  getStore(): object | undefined;
+  run<R>(store: object, callback: () => R): R;
+}
+
+function createPrintJobContext(): PrintJobContext {
+  try {
+    const getBuiltinModule = (
+      globalThis as {
+        process?: { getBuiltinModule?: (id: string) => unknown };
+      }
+    ).process?.getBuiltinModule;
+    const asyncHooks =
+      typeof getBuiltinModule === 'function'
+        ? (getBuiltinModule('async_hooks') as {
+            AsyncLocalStorage?: new () => PrintJobContext;
+          })
+        : undefined;
+    if (typeof asyncHooks?.AsyncLocalStorage === 'function') {
+      return new asyncHooks.AsyncLocalStorage();
+    }
+  } catch {
+    // Environments without async_hooks still serialize sibling jobs.
+  }
+
+  let store: object | undefined;
+  return {
+    getStore() {
+      return store;
+    },
+    run<R>(next: object, callback: () => R): R {
+      const previous = store;
+      store = next;
+      try {
+        return callback();
+      } finally {
+        store = previous;
+      }
+    },
+  };
+}
+
+const printJobContext = createPrintJobContext();
+
 export class Printer {
   private static readonly instances = new Map<string, Printer>();
 
@@ -328,7 +372,6 @@ export class Printer {
   readonly deviceName!: string;
   private readonly lang!: number;
   private sessionOp: Promise<void> = Promise.resolve();
-  private jobRunning = false;
 
   constructor({ target, deviceName, lang = PrinterConstants.MODEL_ANK }: PrinterParams) {
     const existing = Printer.instances.get(target);
@@ -377,7 +420,7 @@ export class Printer {
   }
 
   run<T>(job: (buffer: CommandBuffer) => Promise<T>): Promise<T> {
-    if (this.jobRunning) {
+    if (printJobContext.getStore() === this) {
       throw new PrinterError(
         'ERR_ILLEGAL',
         'A Print Job is already running on this Printer.',
@@ -385,19 +428,19 @@ export class Printer {
       );
     }
 
-    return this.enqueueSessionOp(async () => {
-      this.jobRunning = true;
-      const buffer = new PrinterCommandBuffer(this.target);
-      try {
-        return await job(buffer);
-      } finally {
-        buffer.invalidate();
-        this.jobRunning = false;
-        if (buffer.hasUnsentCommands) {
-          await ReactNativeEscPosPrinterModule.clearCommandBuffer(this.target);
+    return this.enqueueSessionOp(() =>
+      printJobContext.run(this, async () => {
+        const buffer = new PrinterCommandBuffer(this.target);
+        try {
+          return await job(buffer);
+        } finally {
+          buffer.invalidate();
+          if (buffer.hasUnsentCommands) {
+            await ReactNativeEscPosPrinterModule.clearCommandBuffer(this.target);
+          }
         }
-      }
-    });
+      })
+    );
   }
 
   private enqueueSessionOp<T>(operation: () => Promise<T>): Promise<T> {

@@ -417,10 +417,68 @@ test('run serializes Print Jobs on the same Printer', async () => {
   nativeModule.addText.mock.mockImplementation(async () => 0);
 });
 
+test('run serializes a Print Job started after the first job is running', async () => {
+  const order = [];
+  let releaseFirst = () => {};
+  let notifyStarted = () => {};
+  const firstStarted = new Promise((resolve) => {
+    notifyStarted = resolve;
+  });
+  nativeModule.addText.mock.resetCalls();
+  nativeModule.addText.mock.mockImplementation(async (_target, text) => {
+    order.push(text);
+    if (text === 'first') {
+      notifyStarted();
+      await new Promise((resolve) => {
+        releaseFirst = resolve;
+      });
+    }
+    return 0;
+  });
+
+  const printer = new Printer({ target: 'TCP:10.0.0.25', deviceName: 'TM-T88V' });
+  const first = printer.run(async (buffer) => {
+    await buffer.addText('first');
+  });
+  await firstStarted;
+
+  const second = printer.run(async (buffer) => {
+    await buffer.addText('second');
+  });
+
+  assert.equal(nativeModule.addText.mock.callCount(), 1);
+  assert.deepEqual(order, ['first']);
+
+  releaseFirst();
+  await first;
+  await second;
+
+  assert.deepEqual(order, ['first', 'second']);
+  nativeModule.addText.mock.mockImplementation(async () => 0);
+});
+
 test('nested run on the same Printer throws', async () => {
   const printer = new Printer({ target: 'TCP:10.0.0.22', deviceName: 'TM-T88V' });
 
   await printer.run(async () => {
+    assert.throws(
+      () => printer.run(async () => 'nested'),
+      (error) => {
+        assert.ok(error instanceof PrinterError);
+        assert.equal(error.status, 'ERR_ILLEGAL');
+        assert.equal(error.message, 'A Print Job is already running on this Printer.');
+        assert.equal(error.methodName, 'run');
+        return true;
+      }
+    );
+  });
+});
+
+test('nested run after an await on the same Printer throws', async () => {
+  const printer = new Printer({ target: 'TCP:10.0.0.26', deviceName: 'TM-T88V' });
+
+  await printer.run(async (buffer) => {
+    await buffer.addText('outer');
     assert.throws(
       () => printer.run(async () => 'nested'),
       (error) => {
