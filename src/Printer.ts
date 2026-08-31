@@ -1,4 +1,5 @@
 import { cancelDiscoveryAutoStop, rememberSessionPrinter } from './Discovery';
+import { createPrintJobContext } from './printJobContext';
 import { PrinterConstants } from './PrinterConstants';
 import ReactNativeEscPosPrinterModule, {
   type NativePrinterStatus,
@@ -319,48 +320,6 @@ class PrinterCommandBuffer implements CommandBuffer {
     this.hasUnsentCommands = false;
     return toPrinterStatus(raw);
   }
-}
-
-interface PrintJobContext {
-  getStore(): object | undefined;
-  run<R>(store: object, callback: () => R): R;
-}
-
-function createPrintJobContext(): PrintJobContext {
-  try {
-    const getBuiltinModule = (
-      globalThis as {
-        process?: { getBuiltinModule?: (id: string) => unknown };
-      }
-    ).process?.getBuiltinModule;
-    const asyncHooks =
-      typeof getBuiltinModule === 'function'
-        ? (getBuiltinModule('async_hooks') as {
-            AsyncLocalStorage?: new () => PrintJobContext;
-          })
-        : undefined;
-    if (typeof asyncHooks?.AsyncLocalStorage === 'function') {
-      return new asyncHooks.AsyncLocalStorage();
-    }
-  } catch {
-    // Environments without async_hooks still serialize sibling jobs.
-  }
-
-  let store: object | undefined;
-  return {
-    getStore() {
-      return store;
-    },
-    run<R>(next: object, callback: () => R): R {
-      const previous = store;
-      store = next;
-      try {
-        return callback();
-      } finally {
-        store = previous;
-      }
-    },
-  };
 }
 
 const printJobContext = createPrintJobContext();

@@ -489,6 +489,18 @@ test('nested run after an await on the same Printer throws', async () => {
         return true;
       }
     );
+    await assert.rejects(
+      async () => {
+        await printer.run(async () => 'nested-awaited');
+      },
+      (error) => {
+        assert.ok(error instanceof PrinterError);
+        assert.equal(error.status, 'ERR_ILLEGAL');
+        assert.equal(error.message, 'A Print Job is already running on this Printer.');
+        assert.equal(error.methodName, 'run');
+        return true;
+      }
+    );
   });
 });
 
