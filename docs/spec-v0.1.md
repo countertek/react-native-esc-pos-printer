@@ -58,7 +58,7 @@ usePrintersDiscovery(): {
 
 `PrinterStatus` is only `connection`, `online`, `coverOpen`, `paper`, `errorStatus`, each `{ statusCode, status, message }`.
 
-`PrinterConstants` is a TypeScript enum/const object for TRUE/FALSE/UNKNOWN, `ALIGN_*`, `CUT_*`, `MODEL_*`, `LANG_*`, `PARAM_*`, and the status codes those five fields need. No native `getConstants()` dump.
+`PrinterConstants` is a TypeScript enum/const object for TRUE/FALSE/UNKNOWN, `ALIGN_*`, `CUT_*`, `COLOR_*`, `MODEL_*`, `LANG_*`, `PARAM_*`, and the status codes those five fields need. No native `getConstants()` dump.
 
 `PrinterError` / `PrinterDiscoveryError` throw. They carry `status`, `message`, `methodName`. `connect` on an already-connected Printer succeeds. Nested `run` on the same Printer throws. `run` returns the callback’s value. If `run` exits without a successful `sendData`, the Command Buffer is cleared.
 

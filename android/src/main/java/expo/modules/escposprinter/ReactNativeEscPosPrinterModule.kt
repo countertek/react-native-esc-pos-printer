@@ -3,20 +3,38 @@ package expo.modules.escposprinter
 import android.Manifest
 import android.os.Build
 import androidx.core.os.bundleOf
+import com.epson.epos2.Epos2CallbackCode
 import com.epson.epos2.Epos2Exception
-import com.epson.epos2.discovery.DeviceInfo
 import com.epson.epos2.discovery.Discovery
 import com.epson.epos2.discovery.DiscoveryListener
 import com.epson.epos2.discovery.FilterOption
 import com.epson.epos2.printer.Printer as EpsonPrinter
+import com.epson.epos2.printer.PrinterStatusInfo
+import com.epson.epos2.printer.ReceiveListener
 import expo.modules.interfaces.permissions.Permissions
 import expo.modules.kotlin.Promise
 import expo.modules.kotlin.modules.Module
 import expo.modules.kotlin.modules.ModuleDefinition
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 
-private class PrinterSession(val printer: EpsonPrinter) {
+private class PrinterSession(val printer: EpsonPrinter) : ReceiveListener {
   var isConnected = false
   var isClosed = false
+  @Volatile var sendLatch: CountDownLatch? = null
+  @Volatile var sendCode: Int = Epos2CallbackCode.CODE_ERR_FAILURE
+  @Volatile var sendStatus: PrinterStatusInfo? = null
+
+  override fun onPtrReceive(
+    printer: EpsonPrinter?,
+    code: Int,
+    status: PrinterStatusInfo?,
+    printJobId: String?
+  ) {
+    sendCode = code
+    sendStatus = status
+    sendLatch?.countDown()
+  }
 }
 
 class ReactNativeEscPosPrinterModule : Module() {
@@ -53,11 +71,13 @@ class ReactNativeEscPosPrinterModule : Module() {
         snapshot
       }
       for (session in sessions) {
+        session.sendLatch?.countDown()
         synchronized(session) {
           try {
             disconnectUntilSettled(session)
           } catch (_: Epos2Exception) {
           }
+          session.printer.setReceiveEventListener(null)
           session.isConnected = false
           session.isClosed = true
         }
@@ -116,6 +136,50 @@ class ReactNativeEscPosPrinterModule : Module() {
 
     AsyncFunction("getPrinterStatus") { target: String, deviceName: String, lang: Int ->
       printerStatus(target, deviceName, lang)
+    }
+
+    AsyncFunction("addText") { target: String, text: String ->
+      printerCommand(target) { it.addText(text) }
+    }
+
+    AsyncFunction("addTextAlign") { target: String, align: Int ->
+      printerCommand(target) { it.addTextAlign(align) }
+    }
+
+    AsyncFunction("addTextSize") { target: String, width: Int, height: Int ->
+      printerCommand(target) { it.addTextSize(width, height) }
+    }
+
+    AsyncFunction("addTextStyle") { target: String, reverse: Int, ul: Int, em: Int, color: Int ->
+      printerCommand(target) { it.addTextStyle(reverse, ul, em, color) }
+    }
+
+    AsyncFunction("addTextLang") { target: String, lang: Int ->
+      printerCommand(target) { it.addTextLang(lang) }
+    }
+
+    AsyncFunction("addTextSmooth") { target: String, smooth: Int ->
+      printerCommand(target) { it.addTextSmooth(smooth) }
+    }
+
+    AsyncFunction("addFeedLine") { target: String, lines: Int ->
+      printerCommand(target) { it.addFeedLine(lines) }
+    }
+
+    AsyncFunction("addLineSpace") { target: String, space: Int ->
+      printerCommand(target) { it.addLineSpace(space) }
+    }
+
+    AsyncFunction("addCut") { target: String, type: Int ->
+      printerCommand(target) { it.addCut(type) }
+    }
+
+    AsyncFunction("sendPrinterData") { target: String, timeout: Int ->
+      sendPrinterData(target, timeout)
+    }
+
+    AsyncFunction("clearCommandBuffer") { target: String ->
+      clearCommandBuffer(target)
     }
   }
 
@@ -241,21 +305,9 @@ class ReactNativeEscPosPrinterModule : Module() {
 
   private fun printerStatus(target: String, deviceName: String, lang: Int): Map<String, Int> {
     val session = try {
-      session(target, deviceName, lang) ?: return mapOf(
-        "connection" to 0,
-        "online" to -3,
-        "coverOpen" to -3,
-        "paper" to -3,
-        "errorStatus" to -3
-      )
+      session(target, deviceName, lang) ?: return unknownPrinterStatus()
     } catch (_: Epos2Exception) {
-      return mapOf(
-        "connection" to 0,
-        "online" to -3,
-        "coverOpen" to -3,
-        "paper" to -3,
-        "errorStatus" to -3
-      )
+      return unknownPrinterStatus()
     }
     synchronized(session) {
       val status = session.printer.status
@@ -268,7 +320,124 @@ class ReactNativeEscPosPrinterModule : Module() {
       )
     }
   }
+
+  private fun printerCommand(target: String, block: (EpsonPrinter) -> Unit): Int {
+    val session = synchronized(printerSessions) { printerSessions[target] }
+      ?: return Epos2Exception.ERR_ILLEGAL
+    synchronized(session) {
+      if (session.isClosed) {
+        return Epos2Exception.ERR_ILLEGAL
+      }
+      return try {
+        block(session.printer)
+        0
+      } catch (error: Epos2Exception) {
+        error.errorStatus
+      }
+    }
+  }
+
+  private fun clearCommandBuffer(target: String): Int {
+    val session = synchronized(printerSessions) { printerSessions[target] } ?: return 0
+    synchronized(session) {
+      if (session.isClosed) {
+        return 0
+      }
+      session.printer.clearCommandBuffer()
+      return 0
+    }
+  }
+
+  private fun sendPrinterData(target: String, timeout: Int): Map<String, Any> {
+    val session = synchronized(printerSessions) { printerSessions[target] }
+      ?: return sendResult(Epos2Exception.ERR_ILLEGAL, "error")
+
+    val latch: CountDownLatch
+    synchronized(session) {
+      if (session.isClosed || !session.isConnected) {
+        return sendResult(Epos2Exception.ERR_ILLEGAL, "error")
+      }
+      try {
+        session.printer.beginTransaction()
+      } catch (error: Epos2Exception) {
+        return sendResult(error.errorStatus, "error")
+      }
+      latch = CountDownLatch(1)
+      session.sendLatch = latch
+      session.sendCode = Epos2CallbackCode.CODE_ERR_FAILURE
+      session.sendStatus = null
+      session.printer.setReceiveEventListener(session)
+      try {
+        session.printer.sendData(timeout)
+      } catch (error: Epos2Exception) {
+        try {
+          session.printer.endTransaction()
+        } catch (_: Epos2Exception) {
+        }
+        session.printer.clearCommandBuffer()
+        session.printer.setReceiveEventListener(null)
+        session.sendLatch = null
+        return sendResult(error.errorStatus, "error")
+      }
+    }
+
+    val waitMs = (if (timeout < 0) 10_000 else timeout).toLong() + 2_000
+    val completed = latch.await(waitMs, TimeUnit.MILLISECONDS)
+
+    synchronized(session) {
+      try {
+        session.printer.endTransaction()
+      } catch (_: Epos2Exception) {
+      }
+      session.printer.clearCommandBuffer()
+      session.printer.setReceiveEventListener(null)
+      session.sendLatch = null
+      if (!completed) {
+        return sendResult(Epos2CallbackCode.CODE_ERR_TIMEOUT, "code")
+      }
+      val status = session.sendStatus
+      val code = session.sendCode
+      if (status == null) {
+        return sendResult(code, "code")
+      }
+      return sendResult(
+        code,
+        "code",
+        status.connection,
+        status.online,
+        status.coverOpen,
+        status.paper,
+        status.errorStatus
+      )
+    }
+  }
 }
+
+private fun unknownPrinterStatus(): Map<String, Int> = mapOf(
+  "connection" to 0,
+  "online" to -3,
+  "coverOpen" to -3,
+  "paper" to -3,
+  "errorStatus" to -3
+)
+
+private fun sendResult(
+  result: Int,
+  resultKind: String,
+  connection: Int = 0,
+  online: Int = -3,
+  coverOpen: Int = -3,
+  paper: Int = -3,
+  errorStatus: Int = -3
+): Map<String, Any> = mapOf(
+  "result" to result,
+  "resultKind" to resultKind,
+  "connection" to connection,
+  "online" to online,
+  "coverOpen" to coverOpen,
+  "paper" to paper,
+  "errorStatus" to errorStatus
+)
 
 private fun printerSeries(deviceName: String): Int {
   val mapping = listOf(

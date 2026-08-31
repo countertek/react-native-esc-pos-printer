@@ -1,5 +1,6 @@
 import {
   Printer,
+  PrinterConstants,
   PrinterError,
   type PrinterStatus,
 } from '@countertek/react-native-esc-pos-printer';
@@ -76,6 +77,35 @@ export default function PrinterScreen() {
             })
           }
           title="Status"
+        />
+        <Button
+          disabled={!canAct}
+          onPress={() =>
+            void withPrinter(async (printer) => {
+              setStatus(
+                await printer.run(async (buffer) => {
+                  await buffer.addTextAlign(PrinterConstants.ALIGN_CENTER);
+                  await buffer.addTextSize({ width: 2, height: 2 });
+                  await buffer.addText('Hello\n');
+                  await buffer.addTextSize({ width: 1, height: 1 });
+                  await buffer.addTextSmooth(PrinterConstants.TRUE);
+                  await buffer.addText('Text receipt\n');
+                  await buffer.addTextSmooth(PrinterConstants.FALSE);
+                  await buffer.addTextStyle({ em: PrinterConstants.TRUE });
+                  await buffer.addText('Bold line\n');
+                  await buffer.addTextStyle();
+                  await buffer.addTextAlign(PrinterConstants.ALIGN_LEFT);
+                  await buffer.addText('Left\n');
+                  await buffer.addTextAlign(PrinterConstants.ALIGN_RIGHT);
+                  await buffer.addText('Right\n');
+                  await buffer.addFeedLine(2);
+                  await buffer.addCut();
+                  return buffer.sendData();
+                })
+              );
+            })
+          }
+          title="Print"
         />
         <Button
           disabled={!canAct}

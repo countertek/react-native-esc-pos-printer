@@ -26,11 +26,29 @@ private final class DiscoveryDelegate: NSObject, Epos2DiscoveryDelegate {
   }
 }
 
+private final class SendReceiveDelegate: NSObject, Epos2PtrReceiveDelegate {
+  weak var session: PrinterSession?
+
+  func onPtrReceive(
+    _ printerObj: Epos2Printer!,
+    code: Int32,
+    status: Epos2PrinterStatusInfo!,
+    printJobId: String!
+  ) {
+    session?.didReceive(code: code, status: status)
+  }
+}
+
 private final class PrinterSession {
   let printer: Epos2Printer
   let lock = NSLock()
+  let receiveDelegate = SendReceiveDelegate()
   var isConnected = false
   var isClosed = false
+  var sendSemaphore: DispatchSemaphore?
+  var sendCode: Int32 = EPOS2_CODE_ERR_FAILURE.rawValue
+  var sendStatus: Epos2PrinterStatusInfo?
+
   init?(deviceName: String, lang: Int) {
     guard let printer = Epos2Printer(
       printerSeries: printerSeries(for: deviceName),
@@ -39,6 +57,13 @@ private final class PrinterSession {
       return nil
     }
     self.printer = printer
+    receiveDelegate.session = self
+  }
+
+  func didReceive(code: Int32, status: Epos2PrinterStatusInfo?) {
+    sendCode = code
+    sendStatus = status
+    sendSemaphore?.signal()
   }
 }
 
@@ -64,8 +89,10 @@ public class ReactNativeEscPosPrinterModule: Module {
       printerSessions.removeAll()
       printerSessionLock.unlock()
       for session in sessions {
+        session.sendSemaphore?.signal()
         session.lock.lock()
         _ = disconnectUntilSettled(session)
+        session.printer.setReceiveEventDelegate(nil)
         session.isConnected = false
         session.isClosed = true
         session.lock.unlock()
@@ -118,6 +145,50 @@ public class ReactNativeEscPosPrinterModule: Module {
 
     AsyncFunction("getPrinterStatus") { (target: String, deviceName: String, lang: Int) -> [String: Int] in
       return self.printerStatus(target: target, deviceName: deviceName, lang: lang)
+    }
+
+    AsyncFunction("addText") { (target: String, text: String) -> Int in
+      return Int(self.printerCommand(target) { $0.addText(text) })
+    }
+
+    AsyncFunction("addTextAlign") { (target: String, align: Int) -> Int in
+      return Int(self.printerCommand(target) { $0.addTextAlign(Int32(align)) })
+    }
+
+    AsyncFunction("addTextSize") { (target: String, width: Int, height: Int) -> Int in
+      return Int(self.printerCommand(target) { $0.addTextSize(width, height: height) })
+    }
+
+    AsyncFunction("addTextStyle") { (target: String, reverse: Int, ul: Int, em: Int, color: Int) -> Int in
+      return Int(self.printerCommand(target) { $0.addTextStyle(Int32(reverse), ul: Int32(ul), em: Int32(em), color: Int32(color)) })
+    }
+
+    AsyncFunction("addTextLang") { (target: String, lang: Int) -> Int in
+      return Int(self.printerCommand(target) { $0.addTextLang(Int32(lang)) })
+    }
+
+    AsyncFunction("addTextSmooth") { (target: String, smooth: Int) -> Int in
+      return Int(self.printerCommand(target) { $0.addTextSmooth(Int32(smooth)) })
+    }
+
+    AsyncFunction("addFeedLine") { (target: String, lines: Int) -> Int in
+      return Int(self.printerCommand(target) { $0.addFeedLine(lines) })
+    }
+
+    AsyncFunction("addLineSpace") { (target: String, space: Int) -> Int in
+      return Int(self.printerCommand(target) { $0.addLineSpace(space) })
+    }
+
+    AsyncFunction("addCut") { (target: String, type: Int) -> Int in
+      return Int(self.printerCommand(target) { $0.addCut(Int32(type)) })
+    }
+
+    AsyncFunction("sendPrinterData") { (target: String, timeout: Int) -> [String: Any] in
+      return self.sendPrinterData(target: target, timeout: timeout)
+    }
+
+    AsyncFunction("clearCommandBuffer") { (target: String) -> Int in
+      return Int(self.clearCommandBuffer(target: target))
     }
   }
 
@@ -261,20 +332,13 @@ public class ReactNativeEscPosPrinterModule: Module {
   }
 
   private func printerStatus(target: String, deviceName: String, lang: Int) -> [String: Int] {
-    let unknown: [String: Int] = [
-      "connection": 0,
-      "online": -3,
-      "coverOpen": -3,
-      "paper": -3,
-      "errorStatus": -3,
-    ]
     guard let session = session(target: target, deviceName: deviceName, lang: lang) else {
-      return unknown
+      return unknownPrinterStatus()
     }
     session.lock.lock()
     defer { session.lock.unlock() }
     guard let status = session.printer.getStatus() else {
-      return unknown
+      return unknownPrinterStatus()
     }
     return [
       "connection": Int(status.connection),
@@ -284,6 +348,129 @@ public class ReactNativeEscPosPrinterModule: Module {
       "errorStatus": Int(status.errorStatus),
     ]
   }
+
+  private func printerCommand(_ target: String, _ body: (Epos2Printer) -> Int32) -> Int32 {
+    printerSessionLock.lock()
+    let session = printerSessions[target]
+    printerSessionLock.unlock()
+    guard let session else {
+      return EPOS2_ERR_ILLEGAL.rawValue
+    }
+    session.lock.lock()
+    defer { session.lock.unlock() }
+    if session.isClosed {
+      return EPOS2_ERR_ILLEGAL.rawValue
+    }
+    return body(session.printer)
+  }
+
+  private func clearCommandBuffer(target: String) -> Int32 {
+    printerSessionLock.lock()
+    let session = printerSessions[target]
+    printerSessionLock.unlock()
+    guard let session else {
+      return EPOS2_SUCCESS.rawValue
+    }
+    session.lock.lock()
+    defer { session.lock.unlock() }
+    if session.isClosed {
+      return EPOS2_SUCCESS.rawValue
+    }
+    return session.printer.clearCommandBuffer()
+  }
+
+  private func sendPrinterData(target: String, timeout: Int) -> [String: Any] {
+    printerSessionLock.lock()
+    let session = printerSessions[target]
+    printerSessionLock.unlock()
+    guard let session else {
+      return sendResult(EPOS2_ERR_ILLEGAL.rawValue, resultKind: "error")
+    }
+
+    session.lock.lock()
+    if session.isClosed || !session.isConnected {
+      session.lock.unlock()
+      return sendResult(EPOS2_ERR_ILLEGAL.rawValue, resultKind: "error")
+    }
+    let begin = session.printer.beginTransaction()
+    if begin != EPOS2_SUCCESS.rawValue {
+      session.lock.unlock()
+      return sendResult(begin, resultKind: "error")
+    }
+    let semaphore = DispatchSemaphore(value: 0)
+    session.sendSemaphore = semaphore
+    session.sendCode = EPOS2_CODE_ERR_FAILURE.rawValue
+    session.sendStatus = nil
+    session.printer.setReceiveEventDelegate(session.receiveDelegate)
+    let sent = session.printer.sendData(timeout)
+    if sent != EPOS2_SUCCESS.rawValue {
+      _ = session.printer.endTransaction()
+      _ = session.printer.clearCommandBuffer()
+      session.printer.setReceiveEventDelegate(nil)
+      session.sendSemaphore = nil
+      session.lock.unlock()
+      return sendResult(sent, resultKind: "error")
+    }
+    session.lock.unlock()
+
+    let waitSeconds = TimeInterval((timeout < 0 ? 10_000 : timeout) + 2_000) / 1000.0
+    let timedOut = semaphore.wait(timeout: .now() + waitSeconds) == .timedOut
+
+    session.lock.lock()
+    _ = session.printer.endTransaction()
+    _ = session.printer.clearCommandBuffer()
+    session.printer.setReceiveEventDelegate(nil)
+    session.sendSemaphore = nil
+    if timedOut {
+      session.lock.unlock()
+      return sendResult(EPOS2_CODE_ERR_TIMEOUT.rawValue, resultKind: "code")
+    }
+    let code = session.sendCode
+    let status = session.sendStatus
+    session.lock.unlock()
+    guard let status else {
+      return sendResult(code, resultKind: "code")
+    }
+    return sendResult(
+      code,
+      resultKind: "code",
+      connection: Int(status.connection),
+      online: Int(status.online),
+      coverOpen: Int(status.coverOpen),
+      paper: Int(status.paper),
+      errorStatus: Int(status.errorStatus)
+    )
+  }
+}
+
+private func unknownPrinterStatus() -> [String: Int] {
+  [
+    "connection": 0,
+    "online": -3,
+    "coverOpen": -3,
+    "paper": -3,
+    "errorStatus": -3,
+  ]
+}
+
+private func sendResult(
+  _ result: Int32,
+  resultKind: String,
+  connection: Int = 0,
+  online: Int = -3,
+  coverOpen: Int = -3,
+  paper: Int = -3,
+  errorStatus: Int = -3
+) -> [String: Any] {
+  [
+    "result": Int(result),
+    "resultKind": resultKind,
+    "connection": connection,
+    "online": online,
+    "coverOpen": coverOpen,
+    "paper": paper,
+    "errorStatus": errorStatus,
+  ]
 }
 
 private func printerSeries(for deviceName: String) -> Int32 {

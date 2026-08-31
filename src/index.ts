@@ -6,7 +6,7 @@ export type { DeviceInfo, DiscoveryStartParams, DiscoveryStatus } from './Discov
 export { usePrintersDiscovery } from './usePrintersDiscovery';
 export type { PrintersDiscoveryState } from './usePrintersDiscovery';
 export { Printer, PrinterError } from './Printer';
-export type { PrinterParams, PrinterStatus, PrinterStatusField } from './Printer';
+export type { CommandBuffer, PrinterParams, PrinterStatus, PrinterStatusField } from './Printer';
 export { PrinterConstants } from './PrinterConstants';
 
 export function getDiscoveryPermissions() {
