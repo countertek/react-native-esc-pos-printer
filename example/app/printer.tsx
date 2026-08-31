@@ -1,4 +1,8 @@
-import { Printer, PrinterError, type PrinterStatus } from '@countertek/react-native-esc-pos-printer';
+import {
+  Printer,
+  PrinterError,
+  type PrinterStatus,
+} from '@countertek/react-native-esc-pos-printer';
 import { Stack, useLocalSearchParams } from 'expo-router';
 import { useState } from 'react';
 import { Button, StyleSheet, Text, TextInput, View } from 'react-native';

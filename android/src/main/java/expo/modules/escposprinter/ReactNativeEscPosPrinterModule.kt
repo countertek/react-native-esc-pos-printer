@@ -16,6 +16,7 @@ import expo.modules.kotlin.modules.ModuleDefinition
 
 private class PrinterSession(val printer: EpsonPrinter) {
   var isConnected = false
+  var isClosed = false
 }
 
 class ReactNativeEscPosPrinterModule : Module() {
@@ -33,6 +34,7 @@ class ReactNativeEscPosPrinterModule : Module() {
     )
   }
   private val printerSessions = mutableMapOf<String, PrinterSession>()
+  private var isDestroyed = false
 
   override fun definition() = ModuleDefinition {
     Name("ReactNativeEscPosPrinter")
@@ -44,13 +46,21 @@ class ReactNativeEscPosPrinterModule : Module() {
         Discovery.stop()
       } catch (_: Epos2Exception) {
       }
-      synchronized(printerSessions) {
-        printerSessions.values.forEach { session ->
-          if (session.isConnected) {
-            disconnectUntilSettled(session)
-          }
-        }
+      val sessions = synchronized(printerSessions) {
+        isDestroyed = true
+        val snapshot = printerSessions.values.toList()
         printerSessions.clear()
+        snapshot
+      }
+      for (session in sessions) {
+        synchronized(session) {
+          try {
+            disconnectUntilSettled(session)
+          } catch (_: Epos2Exception) {
+          }
+          session.isConnected = false
+          session.isClosed = true
+        }
       }
     }
 
@@ -146,8 +156,11 @@ class ReactNativeEscPosPrinterModule : Module() {
     )
   }
 
-  private fun session(target: String, deviceName: String, lang: Int): PrinterSession {
+  private fun session(target: String, deviceName: String, lang: Int): PrinterSession? {
     synchronized(printerSessions) {
+      if (isDestroyed) {
+        return null
+      }
       printerSessions[target]?.let { return it }
       val context = requireNotNull(appContext.reactContext)
       val session = PrinterSession(EpsonPrinter(printerSeries(deviceName), lang, context))
@@ -158,11 +171,14 @@ class ReactNativeEscPosPrinterModule : Module() {
 
   private fun connectPrinter(target: String, deviceName: String, lang: Int, timeout: Int): Int {
     val session = try {
-      session(target, deviceName, lang)
+      session(target, deviceName, lang) ?: return Epos2Exception.ERR_ILLEGAL
     } catch (_: Epos2Exception) {
       return Epos2Exception.ERR_MEMORY
     }
     synchronized(session) {
+      if (session.isClosed) {
+        return Epos2Exception.ERR_ILLEGAL
+      }
       if (session.isConnected) {
         return 0
       }
@@ -216,7 +232,13 @@ class ReactNativeEscPosPrinterModule : Module() {
 
   private fun printerStatus(target: String, deviceName: String, lang: Int): Map<String, Int> {
     val session = try {
-      session(target, deviceName, lang)
+      session(target, deviceName, lang) ?: return mapOf(
+        "connection" to 0,
+        "online" to -3,
+        "coverOpen" to -3,
+        "paper" to -3,
+        "errorStatus" to -3
+      )
     } catch (_: Epos2Exception) {
       return mapOf(
         "connection" to 0,
@@ -226,14 +248,16 @@ class ReactNativeEscPosPrinterModule : Module() {
         "errorStatus" to -3
       )
     }
-    val status = session.printer.status
-    return mapOf(
-      "connection" to status.connection,
-      "online" to status.online,
-      "coverOpen" to status.coverOpen,
-      "paper" to status.paper,
-      "errorStatus" to status.errorStatus
-    )
+    synchronized(session) {
+      val status = session.printer.status
+      return mapOf(
+        "connection" to status.connection,
+        "online" to status.online,
+        "coverOpen" to status.coverOpen,
+        "paper" to status.paper,
+        "errorStatus" to status.errorStatus
+      )
+    }
   }
 }
 

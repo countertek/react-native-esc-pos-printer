@@ -65,14 +65,14 @@ test('connect talks to native I/O and resolves', async () => {
 });
 
 test('connect succeeds when the Printer is already connected', async () => {
+  nativeModule.connectPrinter.mock.resetCalls();
+  nativeModule.connectPrinter.mock.mockImplementation(async () => 0);
   const printer = new Printer({ target: 'TCP:10.0.0.2', deviceName: 'TM-T88V' });
-  nativeModule.connectPrinter.mock.mockImplementation(async () => {
-    return nativeModule.connectPrinter.mock.callCount() > 1 ? 5 : 0;
-  });
 
   await printer.connect();
   await printer.connect();
 
+  assert.equal(nativeModule.connectPrinter.mock.callCount(), 2);
   nativeModule.connectPrinter.mock.mockImplementation(async () => connectStatus);
 });
 
@@ -163,6 +163,113 @@ test('disconnect ends the session so a later connect talks to native again', asy
   assert.equal(nativeModule.disconnectPrinter.mock.callCount(), 1);
   assert.deepEqual(nativeModule.disconnectPrinter.mock.calls[0].arguments, ['TCP:10.0.0.5']);
   assert.equal(nativeModule.connectPrinter.mock.callCount(), 2);
+});
+
+test('disconnect talks to native when the Printer is not connected', async () => {
+  nativeModule.disconnectPrinter.mock.resetCalls();
+  nativeModule.disconnectPrinter.mock.mockImplementation(async () => 0);
+  const printer = new Printer({ target: 'TCP:10.0.0.10', deviceName: 'TM-T88V' });
+
+  await printer.disconnect();
+
+  assert.equal(nativeModule.disconnectPrinter.mock.callCount(), 1);
+  assert.deepEqual(nativeModule.disconnectPrinter.mock.calls[0].arguments, ['TCP:10.0.0.10']);
+  nativeModule.disconnectPrinter.mock.mockImplementation(async () => disconnectStatus);
+});
+
+test('disconnect then connect without awaiting talks to native in that order', async () => {
+  const nativeOrder = [];
+  let releaseDisconnect = () => {};
+  let notifyStarted = () => {};
+  const disconnectStarted = new Promise((resolve) => {
+    notifyStarted = resolve;
+  });
+  nativeModule.disconnectPrinter.mock.resetCalls();
+  nativeModule.disconnectPrinter.mock.mockImplementation(async () => {
+    notifyStarted();
+    nativeOrder.push('disconnect');
+    await new Promise((resolve) => {
+      releaseDisconnect = resolve;
+    });
+    return 0;
+  });
+  nativeModule.connectPrinter.mock.resetCalls();
+  nativeModule.connectPrinter.mock.mockImplementation(async () => {
+    nativeOrder.push('connect');
+    return 0;
+  });
+
+  const printer = new Printer({ target: 'TCP:10.0.0.12', deviceName: 'TM-T88V' });
+  const disconnecting = printer.disconnect();
+  const connecting = printer.connect();
+  await disconnectStarted;
+
+  assert.equal(nativeModule.connectPrinter.mock.callCount(), 0);
+
+  releaseDisconnect();
+  await disconnecting;
+  await connecting;
+
+  assert.deepEqual(nativeOrder, ['disconnect', 'connect']);
+  nativeModule.connectPrinter.mock.mockImplementation(async () => connectStatus);
+  nativeModule.disconnectPrinter.mock.mockImplementation(async () => disconnectStatus);
+});
+
+test('disconnect issued during connect waits for that connect before talking to native', async () => {
+  const nativeOrder = [];
+  let releaseConnect = () => {};
+  let notifyStarted = () => {};
+  const connectStarted = new Promise((resolve) => {
+    notifyStarted = resolve;
+  });
+  nativeModule.connectPrinter.mock.resetCalls();
+  nativeModule.connectPrinter.mock.mockImplementation(async () => {
+    notifyStarted();
+    nativeOrder.push('connect');
+    await new Promise((resolve) => {
+      releaseConnect = resolve;
+    });
+    return 0;
+  });
+  nativeModule.disconnectPrinter.mock.resetCalls();
+  nativeModule.disconnectPrinter.mock.mockImplementation(async () => {
+    nativeOrder.push('disconnect');
+    return 0;
+  });
+
+  const printer = new Printer({ target: 'TCP:10.0.0.9', deviceName: 'TM-T88V' });
+  const connecting = printer.connect();
+  const disconnecting = printer.disconnect();
+  await connectStarted;
+
+  assert.equal(nativeModule.disconnectPrinter.mock.callCount(), 0);
+
+  releaseConnect();
+  await connecting;
+  await disconnecting;
+
+  assert.deepEqual(nativeOrder, ['connect', 'disconnect']);
+  assert.deepEqual(nativeModule.disconnectPrinter.mock.calls[0].arguments, ['TCP:10.0.0.9']);
+  nativeModule.connectPrinter.mock.mockImplementation(async () => connectStatus);
+  nativeModule.disconnectPrinter.mock.mockImplementation(async () => disconnectStatus);
+});
+
+test('disconnect still talks to native after a failed connect', async () => {
+  nativeModule.connectPrinter.mock.resetCalls();
+  nativeModule.connectPrinter.mock.mockImplementation(async () => 2);
+  nativeModule.disconnectPrinter.mock.resetCalls();
+  nativeModule.disconnectPrinter.mock.mockImplementation(async () => 0);
+
+  const printer = new Printer({ target: 'TCP:10.0.0.11', deviceName: 'TM-T88V' });
+  const connecting = printer.connect();
+  const disconnecting = printer.disconnect();
+
+  await assert.rejects(() => connecting, PrinterError);
+  await disconnecting;
+
+  assert.equal(nativeModule.disconnectPrinter.mock.callCount(), 1);
+  nativeModule.connectPrinter.mock.mockImplementation(async () => connectStatus);
+  nativeModule.disconnectPrinter.mock.mockImplementation(async () => disconnectStatus);
 });
 
 test('disconnect throws PrinterError with status, message, and methodName', async () => {

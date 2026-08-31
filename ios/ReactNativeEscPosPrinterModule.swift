@@ -30,6 +30,7 @@ private final class PrinterSession {
   let printer: Epos2Printer
   let lock = NSLock()
   var isConnected = false
+  var isClosed = false
   init?(deviceName: String, lang: Int) {
     guard let printer = Epos2Printer(
       printerSeries: printerSeries(for: deviceName),
@@ -48,6 +49,7 @@ public class ReactNativeEscPosPrinterModule: Module {
   private var permissionPromises: [Promise] = []
   private var printerSessions: [String: PrinterSession] = [:]
   private let printerSessionLock = NSLock()
+  private var isDestroyed = false
 
   public func definition() -> ModuleDefinition {
     Name("ReactNativeEscPosPrinter")
@@ -57,11 +59,16 @@ public class ReactNativeEscPosPrinterModule: Module {
     OnDestroy {
       _ = Epos2Discovery.stop()
       printerSessionLock.lock()
+      isDestroyed = true
       let sessions = Array(printerSessions.values)
       printerSessions.removeAll()
       printerSessionLock.unlock()
-      for session in sessions where session.isConnected {
+      for session in sessions {
+        session.lock.lock()
         _ = disconnectUntilSettled(session)
+        session.isConnected = false
+        session.isClosed = true
+        session.lock.unlock()
       }
     }
 
@@ -178,6 +185,9 @@ public class ReactNativeEscPosPrinterModule: Module {
   private func session(target: String, deviceName: String, lang: Int) -> PrinterSession? {
     printerSessionLock.lock()
     defer { printerSessionLock.unlock() }
+    if isDestroyed {
+      return nil
+    }
     if let existing = printerSessions[target] {
       return existing
     }
@@ -190,10 +200,16 @@ public class ReactNativeEscPosPrinterModule: Module {
 
   private func connectPrinter(target: String, deviceName: String, lang: Int, timeout: Int) -> Int32 {
     guard let session = session(target: target, deviceName: deviceName, lang: lang) else {
-      return EPOS2_ERR_MEMORY.rawValue
+      printerSessionLock.lock()
+      let destroyed = isDestroyed
+      printerSessionLock.unlock()
+      return destroyed ? EPOS2_ERR_ILLEGAL.rawValue : EPOS2_ERR_MEMORY.rawValue
     }
     session.lock.lock()
     defer { session.lock.unlock() }
+    if session.isClosed {
+      return EPOS2_ERR_ILLEGAL.rawValue
+    }
     if session.isConnected {
       return EPOS2_SUCCESS.rawValue
     }
@@ -237,15 +253,20 @@ public class ReactNativeEscPosPrinterModule: Module {
   }
 
   private func printerStatus(target: String, deviceName: String, lang: Int) -> [String: Int] {
-    guard let session = session(target: target, deviceName: deviceName, lang: lang),
-          let status = session.printer.getStatus() else {
-      return [
-        "connection": 0,
-        "online": -3,
-        "coverOpen": -3,
-        "paper": -3,
-        "errorStatus": -3,
-      ]
+    let unknown: [String: Int] = [
+      "connection": 0,
+      "online": -3,
+      "coverOpen": -3,
+      "paper": -3,
+      "errorStatus": -3,
+    ]
+    guard let session = session(target: target, deviceName: deviceName, lang: lang) else {
+      return unknown
+    }
+    session.lock.lock()
+    defer { session.lock.unlock() }
+    guard let status = session.printer.getStatus() else {
+      return unknown
     }
     return [
       "connection": Int(status.connection),
