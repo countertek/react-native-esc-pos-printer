@@ -156,6 +156,14 @@ class ReactNativeEscPosPrinterModule : Module() {
     )
   }
 
+  private fun stopDiscoveryQuietly() {
+    try {
+      stopDiscoveryUntilSettled()
+      sendEvent("onStatusChange", bundleOf("status" to "inactive"))
+    } catch (_: Epos2Exception) {
+    }
+  }
+
   private fun session(target: String, deviceName: String, lang: Int): PrinterSession? {
     synchronized(printerSessions) {
       if (isDestroyed) {
@@ -170,6 +178,7 @@ class ReactNativeEscPosPrinterModule : Module() {
   }
 
   private fun connectPrinter(target: String, deviceName: String, lang: Int, timeout: Int): Int {
+    stopDiscoveryQuietly()
     val session = try {
       session(target, deviceName, lang) ?: return Epos2Exception.ERR_ILLEGAL
     } catch (_: Epos2Exception) {

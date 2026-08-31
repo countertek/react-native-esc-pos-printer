@@ -182,6 +182,13 @@ public class ReactNativeEscPosPrinterModule: Module {
     ])
   }
 
+  private func stopDiscoveryQuietly() {
+    let result = stopDiscoveryUntilSettled()
+    if result == EPOS2_SUCCESS.rawValue {
+      sendEvent("onStatusChange", ["status": "inactive"])
+    }
+  }
+
   private func session(target: String, deviceName: String, lang: Int) -> PrinterSession? {
     printerSessionLock.lock()
     defer { printerSessionLock.unlock() }
@@ -199,6 +206,7 @@ public class ReactNativeEscPosPrinterModule: Module {
   }
 
   private func connectPrinter(target: String, deviceName: String, lang: Int, timeout: Int) -> Int32 {
+    stopDiscoveryQuietly()
     guard let session = session(target: target, deviceName: deviceName, lang: lang) else {
       printerSessionLock.lock()
       let destroyed = isDestroyed

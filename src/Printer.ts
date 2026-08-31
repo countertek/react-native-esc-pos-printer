@@ -1,3 +1,4 @@
+import { cancelDiscoveryAutoStop, rememberSessionPrinter } from './Discovery';
 import { PrinterConstants } from './PrinterConstants';
 import ReactNativeEscPosPrinterModule from './ReactNativeEscPosPrinterModule';
 
@@ -152,9 +153,11 @@ export class Printer {
     this.deviceName = deviceName;
     this.lang = lang;
     Printer.instances.set(target, this);
+    rememberSessionPrinter(target, deviceName);
   }
 
   async connect(timeout = 15000): Promise<void> {
+    cancelDiscoveryAutoStop();
     return this.enqueueSessionOp(async () => {
       const status = await ReactNativeEscPosPrinterModule.connectPrinter(
         this.target,
