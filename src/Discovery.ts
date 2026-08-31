@@ -82,13 +82,50 @@ function discoveryError(statusCode: number, methodName: string): PrinterDiscover
 }
 
 const discoveredPrinters = new Map<string, DeviceInfo>();
+const sessionPrinters = new Map<string, DeviceInfo>();
 const discoveryListeners = new Set<(printers: DeviceInfo[]) => void>();
 let autoStopTimer: number | undefined;
+
+function addressFromTarget(target: string, prefix: string): string {
+  return target.startsWith(prefix) ? target.slice(prefix.length) : '';
+}
+
+function currentPrinters(): DeviceInfo[] {
+  const printers = new Map(sessionPrinters);
+  for (const [target, printer] of discoveredPrinters) {
+    printers.set(target, printer);
+  }
+  return [...printers.values()];
+}
 
 function notifyDiscovery(printers: DeviceInfo[]) {
   for (const listener of [...discoveryListeners]) {
     listener(printers);
   }
+}
+
+function toDeviceInfo(printer: NativeDeviceInfo): DeviceInfo {
+  return {
+    ...printer,
+    deviceType: deviceTypeByCode[printer.deviceType] ?? 'TYPE_ALL',
+  };
+}
+
+export function rememberSessionPrinter(target: string, deviceName: string): void {
+  const previous = discoveredPrinters.get(target) ?? sessionPrinters.get(target);
+  sessionPrinters.set(target, {
+    target,
+    deviceName,
+    deviceType: previous?.deviceType ?? 'TYPE_PRINTER',
+    ipAddress: previous?.ipAddress ?? addressFromTarget(target, 'TCP:'),
+    macAddress: previous?.macAddress ?? '',
+    bdAddress: previous?.bdAddress ?? addressFromTarget(target, 'BT:'),
+  });
+}
+
+export function cancelDiscoveryAutoStop(): void {
+  clearTimeout(autoStopTimer);
+  autoStopTimer = undefined;
 }
 
 export const PrintersDiscovery = {
@@ -101,7 +138,7 @@ export const PrintersDiscovery = {
     clearTimeout(autoStopTimer);
     autoStopTimer = undefined;
     discoveredPrinters.clear();
-    notifyDiscovery([]);
+    notifyDiscovery(currentPrinters());
 
     if (params.autoStop !== false) {
       autoStopTimer = setTimeout(() => {
@@ -123,13 +160,14 @@ export const PrintersDiscovery = {
 
   onDiscovery(listener: (printers: DeviceInfo[]) => void): () => void {
     discoveryListeners.add(listener);
+    const printers = currentPrinters();
+    if (printers.length > 0) {
+      listener(printers);
+    }
     const subscription = ReactNativeEscPosPrinterModule.addListener('onDiscovery', (printer) => {
-      const publicPrinter: DeviceInfo = {
-        ...printer,
-        deviceType: deviceTypeByCode[printer.deviceType] ?? 'TYPE_ALL',
-      };
+      const publicPrinter = toDeviceInfo(printer);
       discoveredPrinters.set(publicPrinter.target, publicPrinter);
-      listener([...discoveredPrinters.values()]);
+      listener(currentPrinters());
     });
     return () => {
       discoveryListeners.delete(listener);

@@ -40,6 +40,7 @@ registerHooks({
 globalThis.__escPosNativeModule = nativeModule;
 
 const { Printer, PrinterError } = await import('../src/Printer.ts');
+const { PrintersDiscovery } = await import('../src/Discovery.ts');
 
 test('new Printer returns the same instance for the same Target', () => {
   const first = new Printer({ target: 'TCP:192.168.1.50', deviceName: 'TM-T88V' });
@@ -293,4 +294,22 @@ test('disconnect throws PrinterError with status, message, and methodName', asyn
   );
 
   nativeModule.disconnectPrinter.mock.mockImplementation(async () => disconnectStatus);
+});
+
+test('connect cancels Discovery auto-stop without a JS Discovery stop', async () => {
+  mock.timers.enable({ apis: ['setTimeout'] });
+  try {
+    PrintersDiscovery.start({ timeout: 5000 });
+    nativeModule.stopDiscovery.mock.resetCalls();
+    nativeModule.connectPrinter.mock.mockImplementation(async () => 0);
+    const printer = new Printer({ target: 'TCP:10.0.0.10', deviceName: 'TM-T88V' });
+    await printer.connect();
+
+    assert.equal(nativeModule.stopDiscovery.mock.callCount(), 0);
+    mock.timers.tick(5000);
+    assert.equal(nativeModule.stopDiscovery.mock.callCount(), 0);
+  } finally {
+    mock.timers.reset();
+    nativeModule.connectPrinter.mock.mockImplementation(async () => connectStatus);
+  }
 });

@@ -55,6 +55,7 @@ globalThis.__escPosNativeModule = nativeModule;
 const { PrintersDiscovery, PrinterDiscoveryError } = await import('../src/Discovery.ts');
 const { getDiscoveryPermissions, requestDiscoveryPermissions } = await import('../src/index.ts');
 const { usePrintersDiscovery } = await import('../src/usePrintersDiscovery.ts');
+const { Printer } = await import('../src/Printer.ts');
 const { renderHook, resetHooks } = await import('./react-test-hooks.mjs');
 
 test('permission helpers delegate to the native package seam', async () => {
@@ -285,4 +286,41 @@ test('usePrintersDiscovery stays discovering when a second start fails', () => {
   assert.equal(discovery.isDiscovering, true);
 
   discovery.stop();
+});
+
+test('onDiscovery replays current Printers to a new listener', () => {
+  const removeFirst = PrintersDiscovery.onDiscovery(() => {});
+  PrintersDiscovery.start({ autoStop: false });
+  emit('onDiscovery', {
+    target: 'TCP:10.0.0.20',
+    deviceName: 'TM-T88V',
+    deviceType: 1,
+    ipAddress: '10.0.0.20',
+    macAddress: '00:11:22:33:44:55',
+    bdAddress: '',
+  });
+
+  const replayed = [];
+  const removeDiscovery = PrintersDiscovery.onDiscovery((printers) => {
+    replayed.push(printers.map((printer) => printer.target));
+  });
+
+  assert.deepEqual(replayed[0], ['TCP:10.0.0.20']);
+  removeFirst();
+  removeDiscovery();
+  PrintersDiscovery.stop();
+});
+
+test('Discovery start keeps Printers that already have a session', () => {
+  new Printer({ target: 'TCP:10.0.0.9', deviceName: 'TM-T88V' });
+  const snapshots = [];
+  const removeDiscovery = PrintersDiscovery.onDiscovery((printers) => {
+    snapshots.push(printers.map((printer) => printer.target));
+  });
+
+  PrintersDiscovery.start({ autoStop: false });
+
+  assert.ok(snapshots.at(-1)?.includes('TCP:10.0.0.9'));
+  PrintersDiscovery.stop();
+  removeDiscovery();
 });
