@@ -1,6 +1,9 @@
 import { cancelDiscoveryAutoStop, rememberSessionPrinter } from './Discovery';
 import { PrinterConstants } from './PrinterConstants';
-import ReactNativeEscPosPrinterModule from './ReactNativeEscPosPrinterModule';
+import ReactNativeEscPosPrinterModule, {
+  type NativePrinterStatus,
+  type NativeSendResult,
+} from './ReactNativeEscPosPrinterModule';
 
 export interface PrinterParams {
   target: string;
@@ -20,6 +23,24 @@ export interface PrinterStatus {
   coverOpen: PrinterStatusField;
   paper: PrinterStatusField;
   errorStatus: PrinterStatusField;
+}
+
+export interface CommandBuffer {
+  addText(text: string): Promise<void>;
+  addTextAlign(align?: number): Promise<void>;
+  addTextSize(params?: { width?: number; height?: number }): Promise<void>;
+  addTextStyle(params?: {
+    reverse?: number;
+    ul?: number;
+    em?: number;
+    color?: number;
+  }): Promise<void>;
+  addTextLang(lang?: number): Promise<void>;
+  addTextSmooth(smooth?: number): Promise<void>;
+  addFeedLine(lines?: number): Promise<void>;
+  addLineSpace(space: number): Promise<void>;
+  addCut(type?: number): Promise<void>;
+  sendData(timeout?: number): Promise<PrinterStatus>;
 }
 
 export class PrinterError extends Error {
@@ -70,6 +91,49 @@ const disconnectErrorByCode: Record<number, { status: string; message: string }>
       'Failed to disconnect the Printer. Tried to terminate communication with a printer during reconnection process.',
   },
   255: { status: 'ERR_FAILURE', message: 'An unknown error occurred.' },
+};
+
+const commandErrorByCode: Record<number, { status: string; message: string }> = {
+  1: { status: 'ERR_PARAM', message: 'An invalid parameter was passed.' },
+  4: { status: 'ERR_MEMORY', message: 'Memory necessary for processing could not be allocated.' },
+  5: {
+    status: 'ERR_ILLEGAL',
+    message: 'The Printer is in an illegal state for this Command Buffer method.',
+  },
+  6: { status: 'ERR_PROCESSING', message: 'Could not run the process.' },
+  255: { status: 'ERR_FAILURE', message: 'An unknown error occurred.' },
+};
+
+const sendErrorByCode: Record<number, { status: string; message: string }> = {
+  1: { status: 'ERR_PARAM', message: 'An invalid parameter was passed.' },
+  3: {
+    status: 'ERR_TIMEOUT',
+    message: 'Failed to communicate with the Printer within the specified time.',
+  },
+  4: { status: 'ERR_MEMORY', message: 'Memory necessary for processing could not be allocated.' },
+  5: {
+    status: 'ERR_ILLEGAL',
+    message: 'The Printer is not connected or cannot start a send.',
+  },
+  6: { status: 'ERR_PROCESSING', message: 'Could not run the process.' },
+  255: { status: 'ERR_FAILURE', message: 'An unknown error occurred.' },
+};
+
+const sendCodeByCode: Record<number, { status: string; message: string }> = {
+  1: {
+    status: 'CODE_ERR_TIMEOUT',
+    message: 'Failed to communicate with the Printer within the specified time.',
+  },
+  2: { status: 'CODE_ERR_NOT_FOUND', message: 'The Printer could not be found.' },
+  3: { status: 'CODE_ERR_AUTORECOVER', message: 'Automatic recovery error occurred.' },
+  4: { status: 'CODE_ERR_COVER_OPEN', message: 'Cover is open.' },
+  5: { status: 'CODE_ERR_CUTTER', message: 'Auto cutter error occurred.' },
+  6: { status: 'CODE_ERR_MECHANICAL', message: 'Mechanical error occurred.' },
+  7: { status: 'CODE_ERR_EMPTY', message: 'Paper has run out.' },
+  8: { status: 'CODE_ERR_UNRECOVERABLE', message: 'Unrecoverable error occurred.' },
+  9: { status: 'CODE_ERR_SYSTEM', message: 'System error occurred.' },
+  10: { status: 'CODE_ERR_PORT', message: 'Error detected with the communication port.' },
+  255: { status: 'CODE_ERR_FAILURE', message: 'An unknown error occurred.' },
 };
 
 const connectionByCode: Record<number, { status: string; message: string }> = {
@@ -127,12 +191,134 @@ function disconnectError(statusCode: number): PrinterError {
   return new PrinterError(error.status, error.message, 'disconnect');
 }
 
+function commandError(statusCode: number, methodName: string): PrinterError {
+  const error = commandErrorByCode[statusCode] ?? commandErrorByCode[255];
+  return new PrinterError(error.status, error.message, methodName);
+}
+
+function sendError(raw: NativeSendResult): PrinterError {
+  const mapping = raw.resultKind === 'error' ? sendErrorByCode : sendCodeByCode;
+  const error = mapping[raw.result] ?? mapping[255];
+  return new PrinterError(error.status, error.message, 'sendData');
+}
+
 function statusField(
   statusCode: number,
   mapping: Record<number, { status: string; message: string }>
 ): PrinterStatusField {
   const mapped = mapping[statusCode] ?? { status: 'UNKNOWN', message: 'Status is unknown.' };
   return { statusCode, status: mapped.status, message: mapped.message };
+}
+
+function toPrinterStatus(raw: NativePrinterStatus): PrinterStatus {
+  return {
+    connection: statusField(raw.connection, connectionByCode),
+    online: statusField(raw.online, onlineByCode),
+    coverOpen: statusField(raw.coverOpen, coverOpenByCode),
+    paper: statusField(raw.paper, paperByCode),
+    errorStatus: statusField(raw.errorStatus, errorStatusByCode),
+  };
+}
+
+class PrinterCommandBuffer implements CommandBuffer {
+  private active = true;
+  hasUnsentCommands = false;
+  private readonly target: string;
+
+  constructor(target: string) {
+    this.target = target;
+  }
+
+  invalidate() {
+    this.active = false;
+  }
+
+  private assertActive(methodName: string) {
+    if (!this.active) {
+      throw new PrinterError(
+        'ERR_ILLEGAL',
+        'Command Buffer methods are only available inside run.',
+        methodName
+      );
+    }
+  }
+
+  private async add(methodName: string, invoke: () => Promise<number>): Promise<void> {
+    this.assertActive(methodName);
+    const status = await invoke();
+    if (status !== 0) {
+      throw commandError(status, methodName);
+    }
+    this.hasUnsentCommands = true;
+  }
+
+  addText(text: string): Promise<void> {
+    return this.add('addText', () => ReactNativeEscPosPrinterModule.addText(this.target, text));
+  }
+
+  addTextAlign(align: number = PrinterConstants.PARAM_DEFAULT): Promise<void> {
+    return this.add('addTextAlign', () =>
+      ReactNativeEscPosPrinterModule.addTextAlign(this.target, align)
+    );
+  }
+
+  addTextSize({
+    width = PrinterConstants.PARAM_DEFAULT,
+    height = PrinterConstants.PARAM_DEFAULT,
+  }: { width?: number; height?: number } = {}): Promise<void> {
+    return this.add('addTextSize', () =>
+      ReactNativeEscPosPrinterModule.addTextSize(this.target, width, height)
+    );
+  }
+
+  addTextStyle({
+    reverse = PrinterConstants.PARAM_DEFAULT,
+    ul = PrinterConstants.PARAM_DEFAULT,
+    em = PrinterConstants.PARAM_DEFAULT,
+    color = PrinterConstants.PARAM_DEFAULT,
+  }: { reverse?: number; ul?: number; em?: number; color?: number } = {}): Promise<void> {
+    return this.add('addTextStyle', () =>
+      ReactNativeEscPosPrinterModule.addTextStyle(this.target, reverse, ul, em, color)
+    );
+  }
+
+  addTextLang(lang: number = PrinterConstants.PARAM_DEFAULT): Promise<void> {
+    return this.add('addTextLang', () =>
+      ReactNativeEscPosPrinterModule.addTextLang(this.target, lang)
+    );
+  }
+
+  addTextSmooth(smooth: number = PrinterConstants.PARAM_DEFAULT): Promise<void> {
+    return this.add('addTextSmooth', () =>
+      ReactNativeEscPosPrinterModule.addTextSmooth(this.target, smooth)
+    );
+  }
+
+  addFeedLine(lines = 1): Promise<void> {
+    return this.add('addFeedLine', () =>
+      ReactNativeEscPosPrinterModule.addFeedLine(this.target, lines)
+    );
+  }
+
+  addLineSpace(space: number): Promise<void> {
+    return this.add('addLineSpace', () =>
+      ReactNativeEscPosPrinterModule.addLineSpace(this.target, space)
+    );
+  }
+
+  addCut(type: number = PrinterConstants.PARAM_DEFAULT): Promise<void> {
+    return this.add('addCut', () => ReactNativeEscPosPrinterModule.addCut(this.target, type));
+  }
+
+  async sendData(timeout = 5000): Promise<PrinterStatus> {
+    this.assertActive('sendData');
+    const raw = await ReactNativeEscPosPrinterModule.sendPrinterData(this.target, timeout);
+    if (raw.result !== 0) {
+      throw sendError(raw);
+    }
+    this.hasUnsentCommands = false;
+    return toPrinterStatus(raw);
+  }
 }
 
 export class Printer {
@@ -142,6 +328,7 @@ export class Printer {
   readonly deviceName!: string;
   private readonly lang!: number;
   private sessionOp: Promise<void> = Promise.resolve();
+  private jobRunning = false;
 
   constructor({ target, deviceName, lang = PrinterConstants.MODEL_ANK }: PrinterParams) {
     const existing = Printer.instances.get(target);
@@ -177,13 +364,7 @@ export class Printer {
       this.deviceName,
       this.lang
     );
-    return {
-      connection: statusField(raw.connection, connectionByCode),
-      online: statusField(raw.online, onlineByCode),
-      coverOpen: statusField(raw.coverOpen, coverOpenByCode),
-      paper: statusField(raw.paper, paperByCode),
-      errorStatus: statusField(raw.errorStatus, errorStatusByCode),
-    };
+    return toPrinterStatus(raw);
   }
 
   async disconnect(): Promise<void> {
@@ -191,6 +372,30 @@ export class Printer {
       const status = await ReactNativeEscPosPrinterModule.disconnectPrinter(this.target);
       if (status !== 0) {
         throw disconnectError(status);
+      }
+    });
+  }
+
+  run<T>(job: (buffer: CommandBuffer) => Promise<T>): Promise<T> {
+    if (this.jobRunning) {
+      throw new PrinterError(
+        'ERR_ILLEGAL',
+        'A Print Job is already running on this Printer.',
+        'run'
+      );
+    }
+
+    return this.enqueueSessionOp(async () => {
+      this.jobRunning = true;
+      const buffer = new PrinterCommandBuffer(this.target);
+      try {
+        return await job(buffer);
+      } finally {
+        buffer.invalidate();
+        this.jobRunning = false;
+        if (buffer.hasUnsentCommands) {
+          await ReactNativeEscPosPrinterModule.clearCommandBuffer(this.target);
+        }
       }
     });
   }

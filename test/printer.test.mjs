@@ -1,6 +1,9 @@
 import assert from 'node:assert/strict';
+import { execFileSync } from 'node:child_process';
 import { registerHooks } from 'node:module';
+import path from 'node:path';
 import { mock, test } from 'node:test';
+import { fileURLToPath } from 'node:url';
 
 let connectStatus = 0;
 let disconnectStatus = 0;
@@ -21,6 +24,25 @@ const nativeModule = {
   connectPrinter: mock.fn(async () => connectStatus),
   disconnectPrinter: mock.fn(async () => disconnectStatus),
   getPrinterStatus: mock.fn(async () => nativeStatus),
+  addText: mock.fn(async () => 0),
+  addTextAlign: mock.fn(async () => 0),
+  addTextSize: mock.fn(async () => 0),
+  addTextStyle: mock.fn(async () => 0),
+  addTextLang: mock.fn(async () => 0),
+  addTextSmooth: mock.fn(async () => 0),
+  addFeedLine: mock.fn(async () => 0),
+  addLineSpace: mock.fn(async () => 0),
+  addCut: mock.fn(async () => 0),
+  sendPrinterData: mock.fn(async () => ({
+    result: 0,
+    resultKind: 'code',
+    connection: 1,
+    online: 1,
+    coverOpen: 0,
+    paper: 0,
+    errorStatus: 0,
+  })),
+  clearCommandBuffer: mock.fn(async () => 0),
 };
 
 registerHooks({
@@ -41,6 +63,17 @@ globalThis.__escPosNativeModule = nativeModule;
 
 const { Printer, PrinterError } = await import('../src/Printer.ts');
 const { PrintersDiscovery } = await import('../src/Discovery.ts');
+const { PrinterConstants } = await import('../src/PrinterConstants.ts');
+
+const repositoryRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+
+const slimStatus = {
+  connection: { statusCode: 1, status: 'TRUE', message: 'Connected' },
+  online: { statusCode: 1, status: 'TRUE', message: 'Online' },
+  coverOpen: { statusCode: 0, status: 'FALSE', message: 'Cover is closed.' },
+  paper: { statusCode: 0, status: 'PAPER_OK', message: 'Paper remains.' },
+  errorStatus: { statusCode: 0, status: 'NO_ERR', message: 'Normal' },
+};
 
 test('new Printer returns the same instance for the same Target', () => {
   const first = new Printer({ target: 'TCP:192.168.1.50', deviceName: 'TM-T88V' });
@@ -312,4 +345,190 @@ test('connect cancels Discovery auto-stop without a JS Discovery stop', async ()
     mock.timers.reset();
     nativeModule.connectPrinter.mock.mockImplementation(async () => connectStatus);
   }
+});
+
+test('run returns the callback value and talks to native through the Command Buffer', async () => {
+  nativeModule.addText.mock.resetCalls();
+  nativeModule.addCut.mock.resetCalls();
+  const printer = new Printer({ target: 'TCP:10.0.0.20', deviceName: 'TM-T88V' });
+
+  const value = await printer.run(async (buffer) => {
+    await buffer.addTextAlign(PrinterConstants.ALIGN_CENTER);
+    await buffer.addTextSize({ width: 2, height: 2 });
+    await buffer.addTextStyle({
+      reverse: PrinterConstants.FALSE,
+      ul: PrinterConstants.FALSE,
+      em: PrinterConstants.TRUE,
+      color: PrinterConstants.COLOR_1,
+    });
+    await buffer.addTextLang(PrinterConstants.LANG_EN);
+    await buffer.addTextSmooth(PrinterConstants.TRUE);
+    await buffer.addText('Hello');
+    await buffer.addFeedLine(2);
+    await buffer.addLineSpace(30);
+    await buffer.addCut(PrinterConstants.CUT_FEED);
+    return 'printed';
+  });
+
+  assert.equal(value, 'printed');
+  assert.deepEqual(nativeModule.addText.mock.calls[0].arguments, ['TCP:10.0.0.20', 'Hello']);
+  assert.deepEqual(nativeModule.addCut.mock.calls[0].arguments, [
+    'TCP:10.0.0.20',
+    PrinterConstants.CUT_FEED,
+  ]);
+});
+
+test('run serializes Print Jobs on the same Printer', async () => {
+  const order = [];
+  let releaseFirst = () => {};
+  let notifyStarted = () => {};
+  const firstStarted = new Promise((resolve) => {
+    notifyStarted = resolve;
+  });
+  nativeModule.addText.mock.resetCalls();
+  nativeModule.addText.mock.mockImplementation(async (_target, text) => {
+    order.push(text);
+    if (text === 'first') {
+      notifyStarted();
+      await new Promise((resolve) => {
+        releaseFirst = resolve;
+      });
+    }
+    return 0;
+  });
+
+  const printer = new Printer({ target: 'TCP:10.0.0.21', deviceName: 'TM-T88V' });
+  const first = printer.run(async (buffer) => {
+    await buffer.addText('first');
+  });
+  const second = printer.run(async (buffer) => {
+    await buffer.addText('second');
+  });
+  await firstStarted;
+
+  assert.equal(nativeModule.addText.mock.callCount(), 1);
+  assert.deepEqual(order, ['first']);
+
+  releaseFirst();
+  await first;
+  await second;
+
+  assert.deepEqual(order, ['first', 'second']);
+  nativeModule.addText.mock.mockImplementation(async () => 0);
+});
+
+test('nested run on the same Printer throws', async () => {
+  const printer = new Printer({ target: 'TCP:10.0.0.22', deviceName: 'TM-T88V' });
+
+  await printer.run(async () => {
+    assert.throws(
+      () => printer.run(async () => 'nested'),
+      (error) => {
+        assert.ok(error instanceof PrinterError);
+        assert.equal(error.status, 'ERR_ILLEGAL');
+        assert.equal(error.message, 'A Print Job is already running on this Printer.');
+        assert.equal(error.methodName, 'run');
+        return true;
+      }
+    );
+  });
+});
+
+test('run clears the Command Buffer when it exits without a successful send', async () => {
+  nativeModule.clearCommandBuffer.mock.resetCalls();
+  nativeModule.addText.mock.mockImplementation(async () => 0);
+  const printer = new Printer({ target: 'TCP:10.0.0.23', deviceName: 'TM-T88V' });
+
+  await printer.run(async (buffer) => {
+    await buffer.addText('unsent');
+  });
+
+  assert.equal(nativeModule.clearCommandBuffer.mock.callCount(), 1);
+  assert.deepEqual(nativeModule.clearCommandBuffer.mock.calls[0].arguments, ['TCP:10.0.0.23']);
+
+  nativeModule.clearCommandBuffer.mock.resetCalls();
+  await assert.rejects(
+    () =>
+      printer.run(async (buffer) => {
+        await buffer.addText('leftover');
+        throw new Error('job failed');
+      }),
+    { message: 'job failed' }
+  );
+  assert.equal(nativeModule.clearCommandBuffer.mock.callCount(), 1);
+
+  nativeModule.clearCommandBuffer.mock.resetCalls();
+  nativeModule.sendPrinterData.mock.mockImplementation(async () => ({
+    result: 1,
+    resultKind: 'code',
+    connection: 1,
+    online: 0,
+    coverOpen: 0,
+    paper: 2,
+    errorStatus: 0,
+  }));
+  await assert.rejects(
+    () =>
+      printer.run(async (buffer) => {
+        await buffer.addText('failed-send');
+        await buffer.sendData();
+      }),
+    PrinterError
+  );
+  assert.equal(nativeModule.clearCommandBuffer.mock.callCount(), 1);
+  nativeModule.sendPrinterData.mock.mockImplementation(async () => ({
+    result: 0,
+    resultKind: 'code',
+    connection: 1,
+    online: 1,
+    coverOpen: 0,
+    paper: 0,
+    errorStatus: 0,
+  }));
+});
+
+test('successful sendData returns slim Printer Status', async () => {
+  nativeModule.clearCommandBuffer.mock.resetCalls();
+  nativeModule.sendPrinterData.mock.resetCalls();
+  const printer = new Printer({ target: 'TCP:10.0.0.24', deviceName: 'TM-T88V' });
+
+  const status = await printer.run(async (buffer) => {
+    await buffer.addText('receipt');
+    await buffer.addCut();
+    return buffer.sendData(5000);
+  });
+
+  assert.deepEqual(status, slimStatus);
+  assert.deepEqual(Object.keys(status), [
+    'connection',
+    'online',
+    'coverOpen',
+    'paper',
+    'errorStatus',
+  ]);
+  assert.deepEqual(nativeModule.sendPrinterData.mock.calls[0].arguments, ['TCP:10.0.0.24', 5000]);
+  assert.equal(nativeModule.clearCommandBuffer.mock.callCount(), 0);
+});
+
+test('PrinterConstants first-slice values are TypeScript Epson constants', () => {
+  assert.equal(PrinterConstants.PARAM_UNSPECIFIED, -1);
+  assert.equal(PrinterConstants.PARAM_DEFAULT, -2);
+  assert.equal(PrinterConstants.PARAM_UNUSE, -4);
+  assert.equal(PrinterConstants.ALIGN_LEFT, 0);
+  assert.equal(PrinterConstants.ALIGN_CENTER, 1);
+  assert.equal(PrinterConstants.ALIGN_RIGHT, 2);
+  assert.equal(PrinterConstants.CUT_FEED, 0);
+  assert.equal(PrinterConstants.CUT_NO_FEED, 1);
+  assert.equal(PrinterConstants.CUT_RESERVE, 2);
+  assert.equal(PrinterConstants.LANG_EN, 0);
+  assert.equal(PrinterConstants.LANG_JA, 1);
+  assert.equal(PrinterConstants.COLOR_NONE, 0);
+  assert.equal(PrinterConstants.COLOR_1, 1);
+});
+
+test('types reject printer.addText', () => {
+  execFileSync('pnpm', ['exec', 'tsc', '--pretty', 'false', '-p', 'type-tests/tsconfig.json'], {
+    cwd: repositoryRoot,
+    encoding: 'utf8',
+  });
 });
