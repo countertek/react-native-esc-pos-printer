@@ -326,61 +326,6 @@ interface PrintJobContext {
   run<R>(store: object, callback: () => R): R;
 }
 
-type HermesInternalHost = {
-  enqueueJob?: (job: () => void) => void;
-};
-
-function isThenable(value: unknown): value is PromiseLike<unknown> {
-  return value != null && typeof (value as PromiseLike<unknown>).then === 'function';
-}
-
-function loneActiveJob(activeJobs: Set<object>): object | undefined {
-  if (activeJobs.size !== 1) {
-    return undefined;
-  }
-  return activeJobs.values().next().value;
-}
-
-function installHermesContinuationHook(
-  getExecutionStore: () => object | undefined,
-  setExecutionStore: (next: object | undefined) => void,
-  getLoneActiveJob: () => object | undefined
-) {
-  const hermesInternal = (globalThis as { HermesInternal?: HermesInternalHost }).HermesInternal;
-  const enqueueJob = hermesInternal?.enqueueJob;
-  if (typeof enqueueJob !== 'function' || !hermesInternal) {
-    return;
-  }
-
-  const original = enqueueJob.bind(hermesInternal);
-  const wrapped = (job: () => void) => {
-    const captured = getExecutionStore() ?? getLoneActiveJob();
-    original(() => {
-      const previous = getExecutionStore();
-      setExecutionStore(captured);
-      try {
-        job();
-      } finally {
-        setExecutionStore(previous);
-      }
-    });
-  };
-
-  try {
-    hermesInternal.enqueueJob = wrapped;
-  } catch {
-    try {
-      Object.defineProperty(hermesInternal, 'enqueueJob', {
-        configurable: true,
-        value: wrapped,
-        writable: true,
-      });
-    } catch {
-      return;
-    }
-  }
-}
-
 function createPrintJobContext(): PrintJobContext {
   try {
     const getBuiltinModule = (
@@ -401,39 +346,18 @@ function createPrintJobContext(): PrintJobContext {
     // Environments without async_hooks still serialize sibling jobs.
   }
 
-  let executionStore: object | undefined;
-  const activeJobs = new Set<object>();
-  installHermesContinuationHook(
-    () => executionStore,
-    (next) => {
-      executionStore = next;
-    },
-    () => loneActiveJob(activeJobs)
-  );
-
+  let store: object | undefined;
   return {
     getStore() {
-      return executionStore;
+      return store;
     },
     run<R>(next: object, callback: () => R): R {
-      const previous = executionStore;
-      executionStore = next;
-      activeJobs.add(next);
+      const previous = store;
+      store = next;
       try {
-        const result = callback();
-        if (isThenable(result)) {
-          Promise.resolve(result).finally(() => {
-            activeJobs.delete(next);
-          });
-        } else {
-          activeJobs.delete(next);
-        }
-        return result;
-      } catch (error) {
-        activeJobs.delete(next);
-        throw error;
+        return callback();
       } finally {
-        executionStore = previous;
+        store = previous;
       }
     },
   };
