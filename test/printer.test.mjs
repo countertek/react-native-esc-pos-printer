@@ -557,6 +557,66 @@ test('run clears the Command Buffer when it exits without a successful send', as
   }));
 });
 
+test('sendData throws PrinterError unless native result is 0', async () => {
+  nativeModule.sendPrinterData.mock.resetCalls();
+  const printer = new Printer({ target: 'TCP:10.0.0.27', deviceName: 'TM-T88V' });
+
+  nativeModule.sendPrinterData.mock.mockImplementation(async () => ({
+    result: 1,
+    resultKind: 'code',
+    connection: 1,
+    online: 1,
+    coverOpen: 0,
+    paper: 0,
+    errorStatus: 0,
+  }));
+  await assert.rejects(
+    () =>
+      printer.run(async (buffer) => {
+        await buffer.addText('timeout');
+        await buffer.sendData(1000);
+      }),
+    (error) => {
+      assert.ok(error instanceof PrinterError);
+      assert.equal(error.status, 'CODE_ERR_TIMEOUT');
+      assert.equal(error.methodName, 'sendData');
+      return true;
+    }
+  );
+
+  nativeModule.sendPrinterData.mock.mockImplementation(async () => ({
+    result: 5,
+    resultKind: 'error',
+    connection: 0,
+    online: -3,
+    coverOpen: -3,
+    paper: -3,
+    errorStatus: -3,
+  }));
+  await assert.rejects(
+    () =>
+      printer.run(async (buffer) => {
+        await buffer.sendData();
+      }),
+    (error) => {
+      assert.ok(error instanceof PrinterError);
+      assert.equal(error.status, 'ERR_ILLEGAL');
+      assert.equal(error.methodName, 'sendData');
+      return true;
+    }
+  );
+
+  nativeModule.sendPrinterData.mock.mockImplementation(async () => ({
+    result: 0,
+    resultKind: 'code',
+    connection: 1,
+    online: 1,
+    coverOpen: 0,
+    paper: 0,
+    errorStatus: 0,
+  }));
+});
+
 test('successful sendData returns slim Printer Status', async () => {
   nativeModule.clearCommandBuffer.mock.resetCalls();
   nativeModule.sendPrinterData.mock.resetCalls();

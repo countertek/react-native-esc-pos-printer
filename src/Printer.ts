@@ -346,6 +346,9 @@ function createPrintJobContext(): PrintJobContext {
     // Environments without async_hooks still serialize sibling jobs.
   }
 
+  // RN/Hermes has no async_hooks. This store is only live for the synchronous
+  // span of run(); holding it until settle breaks sibling-after-start. Nested
+  // run after await on RN is issue #32.
   let store: object | undefined;
   return {
     getStore() {
